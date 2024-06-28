@@ -125,3 +125,6 @@ Cargo.lock
 .ionide
 
 # End of https://www.toptal.com/developers/gitignore/api/intellij+all,visualstudiocode,rust
+
+# Generated files by build.rs
+/src/gtfs_realtime
