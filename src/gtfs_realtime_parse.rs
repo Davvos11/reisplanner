@@ -9,7 +9,7 @@ use reqwest::blocking::get;
 use crate::gtfs_realtime::gtfs_realtime::FeedMessage;
 
 fn download_gtfs_realtime(url: &String, file_path: &String) -> Result<(), Box<dyn Error>> {
-    let response = get(url)?;
+    let response = get(url)?.error_for_status()?;
     let mut file = File::create(file_path)?;
     file.write_all(&response.bytes()?)?;
     Ok(())
