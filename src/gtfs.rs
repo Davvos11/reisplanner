@@ -1,12 +1,12 @@
-use std::collections::HashSet;
 use std::error::Error;
 use std::fs;
-use std::fs::{File, read_dir};
+use std::fs::File;
 use std::io::{Cursor, Write};
 use std::path::{Path, PathBuf};
 
 use csv::ReaderBuilder;
-use reqwest::blocking::Client;
+use rbatis::RBatis;
+use reqwest::Client;
 use serde::Deserialize;
 use zip::ZipArchive;
 
@@ -16,16 +16,15 @@ pub mod types;
 
 /// Download and extract a GTFS zip
 /// Returns a Vec of PathBuf of each extracted file
-fn download_gtfs(url: &str, folder_path: &str) -> Result<Vec<PathBuf>, Box<dyn Error>> {
+async fn download_gtfs(url: &str, folder_path: &str) -> Result<Vec<PathBuf>, Box<dyn Error>> {
     eprintln!("Downloading...");
 
     let client = Client::builder()
-        .timeout(None) // Disable timeout
         .build()?;
 
-    let response = client.get(url).send()?.error_for_status()?;
+    let response = client.get(url).send().await?.error_for_status()?;
     let mut archive = ZipArchive::new(
-        Cursor::new(response.bytes()?)
+        Cursor::new(response.bytes().await?)
     )?;
     let path = Path::new(folder_path);
     archive.extract(path)?;
@@ -35,21 +34,31 @@ fn download_gtfs(url: &str, folder_path: &str) -> Result<Vec<PathBuf>, Box<dyn E
     Ok(extracted_paths)
 }
 
-fn should_download(url: &str, file_path: &str) -> Result<bool, Box<dyn Error>> {
+async fn should_download(url: &str, file_path: &str) -> Result<bool, Box<dyn Error>> {
     if !Path::new(file_path).exists() {
         return Ok(true);
     }
 
     let response = Client::new()
         .head(url)
-        .send()?;
+        .send().await?;
 
     if response.status().is_success() {
         if let Some(last_modified) = response.headers().get(reqwest::header::LAST_MODIFIED) {
             let last_modified = last_modified.to_str()?;
             let remote_modified_time = httpdate::parse_http_date(last_modified)?;
 
-            let metadata = fs::metadata(file_path)?;
+            let mut metadata = fs::metadata(file_path)?;
+            if metadata.is_dir() {
+                if let Some(first_file) = fs::read_dir(file_path)?
+                    .filter_map(Result::ok)
+                    .find(|f| f.metadata().is_ok_and(|f| f.is_file()))
+                {
+                    metadata = first_file.metadata()?;
+                } else {
+                    return Ok(false);
+                }
+            }
             let local_modified_time = metadata.modified()?;
 
             return Ok(remote_modified_time > local_modified_time);
@@ -79,9 +88,9 @@ const URL: &str = "https://gtfs.ovapi.nl/nl/gtfs-nl.zip";
 const FOLDER: &str = "gtfs";
 
 
-pub fn run_gtfs() -> Result<(), Box<dyn Error>> {
-    if should_download(URL, FOLDER)? {
-        download_gtfs(URL, FOLDER)?;
+pub async fn run_gtfs(db: RBatis) -> Result<(), Box<dyn Error>> {
+    if should_download(URL, FOLDER).await? {
+        download_gtfs(URL, FOLDER).await?;
     }
 
     let agencies: Vec<Agency> = parse_gtfs(format!("{FOLDER}/agency.txt").as_str())?;
@@ -94,9 +103,10 @@ pub fn run_gtfs() -> Result<(), Box<dyn Error>> {
     let transfers: Vec<Transfer> = parse_gtfs(format!("{FOLDER}/transfers.txt").as_str())?;
     let trips: Vec<Trip> = parse_gtfs(format!("{FOLDER}/trips.txt").as_str())?;
 
-    for unit in transfers {
-        dbg!(unit);
-    }
-    
+    let mut transaction = db.acquire_begin().await?;
+    Agency::delete_all(&transaction).await?;
+    Agency::insert_batch(&transaction, &agencies, 64).await?;
+    transaction.commit().await?;
+
     Ok(())
 }

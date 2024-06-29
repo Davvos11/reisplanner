@@ -1,10 +1,10 @@
 use chrono::NaiveDate;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_repr::Deserialize_repr;
 use crate::utils::{deserialize_date, deserialize_time_tuple, TimeTuple};
 
 // Struct for agency.txt
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize, Default)]
 pub struct Agency {
     agency_id: String,
     agency_name: String,
@@ -12,6 +12,8 @@ pub struct Agency {
     agency_timezone: String,
     agency_phone: String,
 }
+rbatis::crud!(Agency {});
+rbatis::impl_delete!(Agency {delete_all() => "``"});
 
 #[derive(Deserialize_repr, PartialEq, Debug)]
 #[repr(u8)]
