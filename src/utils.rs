@@ -1,4 +1,5 @@
-use chrono::NaiveDate;
+use chrono::{Datelike, NaiveDate};
+use rbatis::rbdc;
 use serde::{Deserialize, Deserializer};
 
 pub type TimeTuple = (u8, u8, u8);
@@ -18,10 +19,16 @@ where
     Ok((hours, minutes, seconds))
 }
 
-pub fn deserialize_date<'de, D>(deserializer: D) -> Result<NaiveDate, D::Error>
+pub fn deserialize_date<'de, D>(deserializer: D) -> Result<rbdc::Date, D::Error>
 where
     D: Deserializer<'de>,
 {
     let s = String::deserialize(deserializer)?;
-    NaiveDate::parse_from_str(&s, "%Y%m%d").map_err(serde::de::Error::custom)
+    let chronos_date = NaiveDate::parse_from_str(&s, "%Y%m%d").map_err(serde::de::Error::custom)?;
+    let date = fastdate::Date {
+        day: chronos_date.day() as u8,
+        mon: chronos_date.month() as u8,
+        year: chronos_date.year(),
+    };
+    Ok(rbdc::Date(date))
 }

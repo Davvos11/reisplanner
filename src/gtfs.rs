@@ -1,16 +1,19 @@
 use std::error::Error;
 use std::fs;
 use std::fs::File;
-use std::io::{Cursor, Write};
+use std::io::Cursor;
 use std::path::{Path, PathBuf};
 
-use csv::ReaderBuilder;
+use csv::{DeserializeRecordsIter, ReaderBuilder};
+use itertools::Itertools;
+use rbatis::executor::Executor;
 use rbatis::RBatis;
 use reqwest::Client;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use zip::ZipArchive;
 
 use crate::gtfs::types::{Agency, CalendarDate, FeedInfo, Route, Shape, Stop, StopTime, Transfer, Trip};
+use crate::rbatis_wrapper::DatabaseModel;
 
 pub mod types;
 
@@ -68,44 +71,59 @@ async fn should_download(url: &str, file_path: &str) -> Result<bool, Box<dyn Err
     Ok(false)
 }
 
-fn parse_gtfs<T>(file_path: &str) -> Result<Vec<T>, Box<dyn Error>>
+async fn gtfs_to_db<T>(db: &dyn Executor, file_path: &str) -> Result<(), Box<dyn Error>>
     where
-        T: for<'de> Deserialize<'de>,
+        T: for<'de> Deserialize<'de> + Serialize + DatabaseModel<T>,
 {
+    println!("Saving {file_path} to database...");
     let file = File::open(file_path)?;
     let mut reader = ReaderBuilder::new().from_reader(file);
 
-    let records: Result<Vec<T>, _> = reader.deserialize().take(100).collect();
+    T::delete_all(db).await?;
 
-    if let Err(error) = &records {
-        dbg!(file_path);
+    let records: DeserializeRecordsIter<File, T> = reader.deserialize();
+    for chunk in &records.chunks(100) {
+        let mut items = vec![];
+        for item in chunk {
+            match item {
+                Ok(item) => {items.push(item);}
+                Err(_) => {item?;}
+            }
+        }
+
+        T::insert_batch(db, &items, 100).await?;
     }
 
-    Ok(records?)
+    Ok(())
 }
 
 const URL: &str = "https://gtfs.ovapi.nl/nl/gtfs-nl.zip";
 const FOLDER: &str = "gtfs";
 
 
-pub async fn run_gtfs(db: RBatis) -> Result<(), Box<dyn Error>> {
-    if should_download(URL, FOLDER).await? {
+pub async fn run_gtfs(db: RBatis, force: bool) -> Result<(), Box<dyn Error>> {
+    let has_updated = should_download(URL, FOLDER).await?;
+
+    if has_updated {
         download_gtfs(URL, FOLDER).await?;
     }
 
-    let agencies: Vec<Agency> = parse_gtfs(format!("{FOLDER}/agency.txt").as_str())?;
-    let calendar_dates: Vec<CalendarDate> = parse_gtfs(format!("{FOLDER}/calendar_dates.txt").as_str())?;
-    let feed_info: Vec<FeedInfo> = parse_gtfs(format!("{FOLDER}/feed_info.txt").as_str())?;
-    let routes: Vec<Route> = parse_gtfs(format!("{FOLDER}/routes.txt").as_str())?;
-    let shapes: Vec<Shape> = parse_gtfs(format!("{FOLDER}/shapes.txt").as_str())?;
-    let stops: Vec<Stop> = parse_gtfs(format!("{FOLDER}/stops.txt").as_str())?;
-    let stop_times: Vec<StopTime> = parse_gtfs(format!("{FOLDER}/stop_times.txt").as_str())?;
-    let transfers: Vec<Transfer> = parse_gtfs(format!("{FOLDER}/transfers.txt").as_str())?;
-    let trips: Vec<Trip> = parse_gtfs(format!("{FOLDER}/trips.txt").as_str())?;
+    if !(has_updated | force) {
+        return Ok(())
+    }
 
     let mut transaction = db.acquire_begin().await?;
-    Agency::delete_all(&transaction).await?;
-    Agency::insert_batch(&transaction, &agencies, 64).await?;
+
+    gtfs_to_db::<Agency>(&transaction, format!("{FOLDER}/agency.txt").as_str()).await?;
+    gtfs_to_db::<CalendarDate>(&transaction, format!("{FOLDER}/calendar_dates.txt").as_str()).await?;
+    gtfs_to_db::<FeedInfo>(&transaction, format!("{FOLDER}/feed_info.txt").as_str()).await?;
+    gtfs_to_db::<Route>(&transaction, format!("{FOLDER}/routes.txt").as_str()).await?;
+    gtfs_to_db::<Stop>(&transaction, format!("{FOLDER}/stops.txt").as_str()).await?;
+    gtfs_to_db::<Transfer>(&transaction, format!("{FOLDER}/transfers.txt").as_str()).await?;
+    gtfs_to_db::<Trip>(&transaction, format!("{FOLDER}/trips.txt").as_str()).await?;
+    gtfs_to_db::<Shape>(&transaction, format!("{FOLDER}/shapes.txt").as_str()).await?;
+    gtfs_to_db::<StopTime>(&transaction, format!("{FOLDER}/stop_times.txt").as_str()).await?;
+
     transaction.commit().await?;
 
     Ok(())

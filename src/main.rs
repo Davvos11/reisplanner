@@ -10,6 +10,7 @@ pub mod gtfs;
 mod gtfs_realtime_parse;
 pub mod utils;
 pub mod database;
+pub mod rbatis_wrapper;
 
 
 #[tokio::main]
@@ -18,6 +19,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // println!("Run realtime");
     // run_gtfs_realtime()?;
     println!("Run planning");
-    run_gtfs(db).await?;
+    run_gtfs(db, false).await?;
     Ok(())
 }
