@@ -16,9 +16,9 @@ pub mod rbatis_wrapper;
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     let db = init_db().await?;
-    // println!("Run realtime");
-    // run_gtfs_realtime()?;
     println!("Run planning");
     run_gtfs(db, false).await?;
+    // println!("Run realtime");
+    // run_gtfs_realtime()?;
     Ok(())
 }

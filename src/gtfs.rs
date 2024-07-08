@@ -5,11 +5,13 @@ use std::io::Cursor;
 use std::path::{Path, PathBuf};
 
 use csv::{DeserializeRecordsIter, ReaderBuilder};
+use indicatif::ProgressBar;
 use itertools::Itertools;
 use rbatis::executor::Executor;
 use rbatis::RBatis;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
+use tokio::time::sleep;
 use zip::ZipArchive;
 
 use crate::gtfs::types::{Agency, CalendarDate, FeedInfo, Route, Shape, Stop, StopTime, Transfer, Trip};
@@ -20,7 +22,7 @@ pub mod types;
 /// Download and extract a GTFS zip
 /// Returns a Vec of PathBuf of each extracted file
 async fn download_gtfs(url: &str, folder_path: &str) -> Result<Vec<PathBuf>, Box<dyn Error>> {
-    eprintln!("Downloading...");
+    println!("Downloading, this will take a while...");
 
     let client = Client::builder()
         .build()?;
@@ -71,29 +73,35 @@ async fn should_download(url: &str, file_path: &str) -> Result<bool, Box<dyn Err
     Ok(false)
 }
 
+const DESERIALIZE_CHUNK_SIZE: u64 = 500;
+
 async fn gtfs_to_db<T>(db: &dyn Executor, file_path: &str) -> Result<(), Box<dyn Error>>
     where
         T: for<'de> Deserialize<'de> + Serialize + DatabaseModel<T>,
 {
     println!("Saving {file_path} to database...");
+    // Open file to count the length for the progressbar
     let file = File::open(file_path)?;
     let mut reader = ReaderBuilder::new().from_reader(file);
+    let records: DeserializeRecordsIter<File, T> = reader.deserialize();
+    let length = records.count() as u64;
+    let bar = ProgressBar::new(length);
 
     T::delete_all(db).await?;
 
+    // Reopen the file to actually read it
+    let file = File::open(file_path)?;
+    let mut reader = ReaderBuilder::new().from_reader(file);
     let records: DeserializeRecordsIter<File, T> = reader.deserialize();
-    for chunk in &records.chunks(100) {
-        let mut items = vec![];
-        for item in chunk {
-            match item {
-                Ok(item) => {items.push(item);}
-                Err(_) => {item?;}
-            }
-        }
 
-        T::insert_batch(db, &items, 100).await?;
+    for chunk in &records.chunks(DESERIALIZE_CHUNK_SIZE as usize) {
+        let items: Vec<_> = chunk.into_iter().collect::<Result<_, _>>()?;
+
+        T::insert_batch(db, &items, DESERIALIZE_CHUNK_SIZE).await?;
+        bar.inc(DESERIALIZE_CHUNK_SIZE);
     }
-
+    
+    bar.finish();
     Ok(())
 }
 
