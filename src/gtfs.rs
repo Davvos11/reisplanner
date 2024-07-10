@@ -109,7 +109,7 @@ const URL: &str = "https://gtfs.ovapi.nl/nl/gtfs-nl.zip";
 const FOLDER: &str = "gtfs";
 
 
-pub async fn run_gtfs(db: RBatis, force: bool) -> Result<(), Box<dyn Error>> {
+pub async fn run_gtfs(db: &RBatis, force: bool) -> Result<(), Box<dyn Error>> {
     let has_updated = should_download(URL, FOLDER).await?;
 
     if has_updated {

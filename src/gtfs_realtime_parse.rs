@@ -3,37 +3,96 @@ use std::fs::File;
 use std::io::Read;
 use std::io::Write;
 
-use protobuf::Message;
-use reqwest::blocking::get;
+use protobuf::{EnumOrUnknown, Message};
+use rbatis::executor::Executor;
+use rbatis::RBatis;
+use reqwest::get;
+use crate::gtfs::types::{StopTime, Trip};
 
-use crate::gtfs_realtime::gtfs_realtime::FeedMessage;
+use crate::gtfs_realtime::gtfs_realtime::{FeedEntity, FeedMessage};
+use crate::gtfs_realtime::gtfs_realtime::feed_header::Incrementality::FULL_DATASET;
 
-fn download_gtfs_realtime(url: &String, file_path: &String) -> Result<(), Box<dyn Error>> {
-    let response = get(url)?.error_for_status()?;
+async fn download_gtfs_realtime(url: &String, file_path: &String) -> Result<(), Box<dyn Error>> {
+    let response = get(url).await?.error_for_status()?;
     let mut file = File::create(file_path)?;
-    file.write_all(&response.bytes()?)?;
+    file.write_all(&response.bytes().await?)?;
     Ok(())
 }
 
-fn parse_gtfs_realtime(file_path: &String) -> Result<(), Box<dyn Error>> {
+async fn parse_gtfs_realtime(file_path: &String, db: &dyn Executor) -> Result<(), Box<dyn Error>> {
     let mut file = File::open(file_path)?;
     let mut buffer = Vec::new();
     file.read_to_end(&mut buffer)?;
 
     let feed = FeedMessage::parse_from_bytes(&buffer)?;
-    for entity in &feed.entity[..2] {
-        dbg!(entity);
+
+    assert_eq!(feed.header.incrementality, Some(EnumOrUnknown::new(FULL_DATASET)),
+               "Full dataset expected");
+
+    for entity in &feed.entity[..200] {
+        parse_gtfs_realtime_entry(entity, db).await?;
     }
     Ok(())
 }
 
-pub fn run_gtfs_realtime() -> Result<(), Box<dyn Error>> {
+async fn parse_gtfs_realtime_entry(entry: &FeedEntity, db: &dyn Executor) -> Result<(), Box<dyn Error>> {
+    if let Some(trip_update) = entry.trip_update.as_ref() {
+        assert!(&trip_update.trip.trip_id.is_some(), "Trip id should be known");
+        // TODO handle parse error
+        let trip_id: u32 = match trip_update.trip.trip_id.as_ref() {
+            Some(id) => {id.parse().unwrap_or(0)}
+            None => {0}
+        };
+        for update in &trip_update.stop_time_update {
+            // TODO handle parse error
+            let stop_id: u32 = match update.stop_id.as_ref() {
+                Some(id) => {id.parse().unwrap_or(0)}
+                None => {0}
+            };
+            let mut result = StopTime::select_by_id_and_trip(db, &stop_id, &trip_id).await?;
+            assert!(result.len() <= 1, "No more than one trip should have this id");
+            // TODO use certainty and/or schedule relationship
+            if let Some(db_stop_time) = result.first_mut() {
+                // TODO maybe also set if None?
+                if let delay@Some(_) = update.arrival.delay {
+                    db_stop_time.arrival_delay = delay;
+                }
+                if let delay@Some(_) = update.departure.delay {
+                    db_stop_time.departure_delay = delay;
+                }
+                StopTime::update_by_id_and_trip(db, db_stop_time, &stop_id, &trip_id).await?;
+            }
+        }
+        // Experimental delay field, delay in stop_time_update takes precedent
+        // TODO use current departure or arrival delay instead if possible
+        if let Some(delay) = trip_update.delay {
+            let mut result = Trip::select_by_column(db, "trip_id", &trip_update.trip.trip_id).await?;
+            assert!(result.len() <= 1, "No more than one trip should have this id");
+            if let Some(db_trip) = result.first_mut() {
+                db_trip.delay = Some(delay);
+                Trip::update_by_column(db, db_trip, "trip_id").await?;
+            }
+        }
+    }
+    if let Some(vehicle_position) = entry.vehicle.as_ref() {}
+    if let Some(alert) = entry.alert.as_ref() {}
+    for (num, field) in entry.special_fields.unknown_fields().iter() {}
+
+    Ok(())
+}
+
+pub async fn run_gtfs_realtime(db: &RBatis) -> Result<(), Box<dyn Error>> {
+    let mut transaction = db.acquire_begin().await?;
+
     for stream_title in ["alerts", "trainUpdates", "tripUpdates", "vehiclePositions"] {
         let url = format!("https://gtfs.ovapi.nl/nl/{stream_title}.pb");
         let file_path = format!("{stream_title}.pb");
 
-        download_gtfs_realtime(&url, &file_path)?;
-        parse_gtfs_realtime(&file_path)?;
+        download_gtfs_realtime(&url, &file_path).await?;
+        parse_gtfs_realtime(&file_path, &transaction).await?;
     }
+
+    transaction.commit().await?;
+
     Ok(())
 }
