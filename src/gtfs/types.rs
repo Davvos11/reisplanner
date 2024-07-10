@@ -101,7 +101,7 @@ impl Default for Route {
 crud_trait!(Route {});
 
 // Struct for shapes.txt
-#[derive(Debug, Deserialize, Serialize, Default)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct Shape {
     shape_id: u32,
     shape_pt_sequence: u32,
@@ -109,6 +109,19 @@ pub struct Shape {
     shape_pt_lon: f64,
     shape_dist_traveled: Option<f64>,
 }
+
+impl Default for Shape {
+    fn default() -> Self {
+        Self {
+            shape_id: Default::default(),
+            shape_pt_sequence: Default::default(),
+            shape_pt_lat: Default::default(),
+            shape_pt_lon: Default::default(),
+            shape_dist_traveled: Some(Default::default()),
+        }
+    }
+}
+
 crud_trait!(Shape {});
 
 
@@ -134,7 +147,7 @@ enum WheelchairBoarding {
 }
 
 // Struct for stops.txt
-#[derive(Debug, Deserialize, Serialize, Default)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct Stop {
     stop_id: String,
     stop_code: Option<String>,
@@ -148,6 +161,25 @@ pub struct Stop {
     platform_code: Option<String>,
     zone_id: Option<String>,
 }
+
+impl Default for Stop {
+    fn default() -> Self {
+        Self {
+            stop_id: Default::default(),
+            stop_code: Some(Default::default()),
+            stop_name: Default::default(),
+            stop_lat: Default::default(),
+            stop_lon: Default::default(),
+            location_type: Default::default(),
+            parent_station: Some(Default::default()),
+            stop_timezone: Some(Default::default()),
+            wheelchair_boarding: Some(Default::default()),
+            platform_code: Some(Default::default()),
+            zone_id: Some(Default::default()),
+        }
+    }
+}
+
 crud_trait!(Stop {});
 
 
@@ -159,13 +191,13 @@ enum PickupType {
     NotAvailable = 1,
     MustPhone = 2,
     MustCoordinate = 3,
-// pickup_type=0 forbidden if start_pickup_drop_off_window or end_pickup_drop_off_window are defined.
-// pickup_type=3 forbidden if start_pickup_drop_off_window or end_pickup_drop_off_window are defined.
-// drop_off_type=0 forbidden if start_pickup_drop_off_window or end_pickup_drop_off_window are defined.
+    // pickup_type=0 forbidden if start_pickup_drop_off_window or end_pickup_drop_off_window are defined.
+    // pickup_type=3 forbidden if start_pickup_drop_off_window or end_pickup_drop_off_window are defined.
+    // drop_off_type=0 forbidden if start_pickup_drop_off_window or end_pickup_drop_off_window are defined.
 }
 
 // Struct for stop_times.txt
-#[derive(Debug, Deserialize, Serialize, Default)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct StopTime {
     trip_id: u32,
     stop_sequence: u32,
@@ -181,6 +213,25 @@ pub struct StopTime {
     shape_dist_traveled: Option<f64>,
     fare_units_traveled: Option<i32>,
 }
+
+impl Default for StopTime {
+    fn default() -> Self {
+        Self {
+            trip_id: Default::default(),
+            stop_sequence: Default::default(),
+            stop_id: Default::default(),
+            stop_headsign: Some(Default::default()),
+            arrival_time: Default::default(),
+            departure_time: Default::default(),
+            pickup_type: Default::default(),
+            drop_off_type: Default::default(),
+            timepoint: Default::default(),
+            shape_dist_traveled: Some(Default::default()),
+            fare_units_traveled: Some(Default::default()),
+        }
+    }
+}
+
 crud_trait!(StopTime {});
 
 
@@ -197,7 +248,7 @@ enum TransferType {
 }
 
 // Struct for transfers.txt
-#[derive(Debug, Deserialize, Serialize, Default)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct Transfer {
     from_stop_id: String,
     to_stop_id: String,
@@ -208,10 +259,26 @@ pub struct Transfer {
     transfer_type: TransferType,
     min_transfer_time: Option<i32>,
 }
+
+impl Default for Transfer {
+    fn default() -> Self {
+        Self {
+            from_stop_id: Default::default(),
+            to_stop_id: Default::default(),
+            from_route_id: Some(Default::default()),
+            to_route_id: Some(Default::default()),
+            from_trip_id: Some(Default::default()),
+            to_trip_id: Some(Default::default()),
+            transfer_type: Default::default(),
+            min_transfer_time: Some(Default::default()),
+        }
+    }
+}
+
 crud_trait!(Transfer {});
 
 // Struct for trips.txt
-#[derive(Debug, Deserialize, Serialize, Default)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct Trip {
     route_id: u32,
     service_id: u32,
@@ -226,4 +293,24 @@ pub struct Trip {
     wheelchair_accessible: u32,
     bikes_allowed: Option<u32>,
 }
+
+impl Default for Trip {
+    fn default() -> Self {
+        Self {
+            route_id: Default::default(),
+            service_id: Default::default(),
+            trip_id: Default::default(),
+            realtime_trip_id: Default::default(),
+            trip_headsign: Default::default(),
+            trip_short_name: Some(Default::default()),
+            trip_long_name: Some(Default::default()),
+            direction_id: Default::default(),
+            block_id: Some(Default::default()),
+            shape_id: Some(Default::default()),
+            wheelchair_accessible: Default::default(),
+            bikes_allowed: Some(Default::default()),
+        }
+    }
+}
+
 crud_trait!(Trip {});
