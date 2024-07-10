@@ -1,4 +1,5 @@
 use rbatis::executor::Executor;
+use rbatis::{impl_select, impl_update};
 use rbatis::rbdc::{Date, Error};
 use rbatis::rbdc::db::ExecResult;
 use serde::{Deserialize, Serialize};
@@ -199,19 +200,24 @@ enum PickupType {
 // Struct for stop_times.txt
 #[derive(Debug, Deserialize, Serialize)]
 pub struct StopTime {
-    trip_id: u32,
-    stop_sequence: u32,
-    stop_id: String,
-    stop_headsign: Option<String>,
+    pub trip_id: u32,
+    pub stop_sequence: u32,
+    pub stop_id: String,
+    pub stop_headsign: Option<String>,
     #[serde(deserialize_with = "deserialize_time_tuple")]
-    arrival_time: TimeTuple,
+    pub arrival_time: TimeTuple,
     #[serde(deserialize_with = "deserialize_time_tuple")]
-    departure_time: TimeTuple,
-    pickup_type: PickupType,
-    drop_off_type: PickupType,
-    timepoint: i32,
-    shape_dist_traveled: Option<f64>,
-    fare_units_traveled: Option<i32>,
+    pub departure_time: TimeTuple,
+    pub pickup_type: PickupType,
+    pub drop_off_type: PickupType,
+    pub timepoint: i32,
+    pub shape_dist_traveled: Option<f64>,
+    pub fare_units_traveled: Option<i32>,
+    // Fields added by realtime updates
+    #[serde(default)]
+    pub arrival_delay: Option<i32>,
+    #[serde(default)]
+    pub departure_delay: Option<i32>,
 }
 
 impl Default for StopTime {
@@ -228,11 +234,19 @@ impl Default for StopTime {
             timepoint: Default::default(),
             shape_dist_traveled: Some(Default::default()),
             fare_units_traveled: Some(Default::default()),
+            arrival_delay: Some(Default::default()),
+            departure_delay: Some(Default::default()),
         }
     }
 }
 
 crud_trait!(StopTime {});
+impl_select!(StopTime {
+    select_by_id_and_trip(stop_id:&u32,trip_id:&u32) => "`where stop_id = #{stop_id} and trip_id = #{trip_id}`"
+});
+impl_update!(StopTime {
+    update_by_id_and_trip(stop_id:&u32,trip_id:&u32) => "`where stop_id = #{stop_id} and trip_id = #{trip_id}`"
+});
 
 
 #[derive(Deserialize_repr, Serialize_repr, Default, PartialEq, Debug)]
@@ -277,6 +291,16 @@ impl Default for Transfer {
 
 crud_trait!(Transfer {});
 
+#[derive(Deserialize_repr, Serialize_repr, Default, PartialEq, Debug)]
+#[repr(u8)]
+enum AllowedType {
+    #[default]
+    NoInformation = 0,
+    Allowed = 1,
+    NotAllowed = 2,
+}
+
+
 // Struct for trips.txt
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Trip {
@@ -290,8 +314,11 @@ pub struct Trip {
     direction_id: i32,
     block_id: Option<String>,
     shape_id: Option<u32>,
-    wheelchair_accessible: u32,
-    bikes_allowed: Option<u32>,
+    wheelchair_accessible: Option<AllowedType>,
+    bikes_allowed: Option<AllowedType>,
+    // Fields added by realtime updates:
+    #[serde(default)]
+    pub delay: Option<i32>,
 }
 
 impl Default for Trip {
@@ -307,8 +334,9 @@ impl Default for Trip {
             direction_id: Default::default(),
             block_id: Some(Default::default()),
             shape_id: Some(Default::default()),
-            wheelchair_accessible: Default::default(),
+            wheelchair_accessible: Some(Default::default()),
             bikes_allowed: Some(Default::default()),
+            delay: Some(Default::default()),
         }
     }
 }
