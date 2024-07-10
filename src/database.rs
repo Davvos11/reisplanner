@@ -21,11 +21,16 @@ pub async fn init_db() -> Result<RBatis, Box<dyn Error>> {
     sync_table::<Transfer>(&rb, "transfer").await?;
     sync_table::<Trip>(&rb, "trip").await?;
 
+    // Add indices
+    add_index(&rb, "trip", &["trip_id"]).await?;
+    add_index(&rb, "stop_time", &["stop_id", "trip_id"]).await?;
+
     Ok(rb)
 }
 
 async fn sync_table<T>(rb: &RBatis, table_name: &str) -> Result<(), Box<dyn Error>>
-    where T: Default + Serialize
+where
+    T: Default + Serialize,
 {
     RBatis::sync(
         &rb.acquire().await?,
@@ -33,5 +38,16 @@ async fn sync_table<T>(rb: &RBatis, table_name: &str) -> Result<(), Box<dyn Erro
         &T::default(),
         table_name,
     ).await?;
+    Ok(())
+}
+
+async fn add_index(rb: &RBatis, table: &str, columns: &[&str]) -> Result<(), Box<dyn Error>> {
+    let name = columns.join("_") + "_idx";
+    rb.query(
+        format!("CREATE INDEX IF NOT EXISTS {name} ON {table} ({});",
+                columns.join(", ")).as_str(),
+        vec![],
+    ).await?;
+
     Ok(())
 }
