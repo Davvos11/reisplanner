@@ -1,45 +1,93 @@
+use std::any::type_name;
+use std::fmt;
+use std::num::ParseIntError;
+use std::str::FromStr;
+
 use chrono::{Datelike, NaiveDate};
 use rbatis::rbdc;
-use serde::{Deserialize, Deserializer};
+use serde::{de, Deserialize, Deserializer};
+use serde::de::{SeqAccess, Visitor};
+
+use crate::errors::FieldParseError;
 
 pub type TimeTuple = (u8, u8, u8);
 
-
-#[derive(Deserialize)]
-#[serde(untagged)]
-enum StringOrTimeTuple {
-    String(String),
-    TimeTuple(TimeTuple),
-}
 
 pub fn deserialize_time_tuple<'de, D>(deserializer: D) -> Result<TimeTuple, D::Error>
 where
     D: Deserializer<'de>,
 {
-    match StringOrTimeTuple::deserialize(deserializer)? {
-        StringOrTimeTuple::String(s) => {
-            let parts: Vec<&str> = s.split(':').collect();
+    struct TimeTupleVisitor;
+
+    impl<'de> Visitor<'de> for TimeTupleVisitor {
+        type Value = TimeTuple;
+
+        fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+            formatter.write_str("a time string in the format HH:MM:SS or a valid time tuple")
+        }
+
+        fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            let parts: Vec<&str> = value.split(':').collect();
             if parts.len() != 3 {
-                return Err(serde::de::Error::custom("Invalid time format"));
+                return Err(de::Error::custom("Invalid time format"));
             }
-            let hours = parts[0].parse::<u8>().map_err(serde::de::Error::custom)?;
-            let minutes = parts[1].parse::<u8>().map_err(serde::de::Error::custom)?;
-            let seconds = parts[2].parse::<u8>().map_err(serde::de::Error::custom)?;
+            let hours = parts[0].parse::<u8>().map_err(de::Error::custom)?;
+            let minutes = parts[1].parse::<u8>().map_err(de::Error::custom)?;
+            let seconds = parts[2].parse::<u8>().map_err(de::Error::custom)?;
             Ok((hours, minutes, seconds))
         }
-        StringOrTimeTuple::TimeTuple(t) => {
-            Ok(t)
+
+        fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+        where
+            A: SeqAccess<'de>,
+        {
+            let hours = seq.next_element::<u8>()?.ok_or_else(|| de::Error::invalid_length(0, &self))?;
+            let minutes = seq.next_element::<u8>()?.ok_or_else(|| de::Error::invalid_length(1, &self))?;
+            let seconds = seq.next_element::<u8>()?.ok_or_else(|| de::Error::invalid_length(2, &self))?;
+            Ok((hours, minutes, seconds))
+        }
+
+        fn visit_map<M>(self, map: M) -> Result<Self::Value, M::Error>
+        where
+            M: de::MapAccess<'de>,
+        {
+            Deserialize::deserialize(de::value::MapAccessDeserializer::new(map))
         }
     }
+
+    deserializer.deserialize_any(TimeTupleVisitor)
 }
+
 
 pub fn deserialize_date<'de, D>(deserializer: D) -> Result<rbdc::Date, D::Error>
 where
     D: Deserializer<'de>,
 {
-    match StringOrDate::deserialize(deserializer)? {
-        StringOrDate::String(s) => {
-            let chronos_date = NaiveDate::parse_from_str(&s, "%Y%m%d").map_err(serde::de::Error::custom)?;
+    struct DateVisitor;
+
+    impl<'de> Visitor<'de> for DateVisitor {
+        type Value = rbdc::Date;
+
+        fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+            formatter.write_str("a date string in the format YYYYMMDD or a valid date object")
+        }
+
+        fn visit_u64<E>(self, value: u64) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            self.visit_str(&value.to_string())
+        }
+
+        fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            let chronos_date = NaiveDate::parse_from_str(value, "%Y%m%d")
+                .map_err(de::Error::custom)?;
             let date = fastdate::Date {
                 day: chronos_date.day() as u8,
                 mon: chronos_date.month() as u8,
@@ -47,16 +95,23 @@ where
             };
             Ok(rbdc::Date(date))
         }
-        StringOrDate::Date(d) => {
-            Ok(d)
+
+        fn visit_map<M>(self, map: M) -> Result<Self::Value, M::Error>
+        where
+            M: de::MapAccess<'de>,
+        {
+            Deserialize::deserialize(de::value::MapAccessDeserializer::new(map))
         }
     }
+
+    deserializer.deserialize_any(DateVisitor)
 }
 
-#[derive(Deserialize)]
-#[serde(untagged)]
-enum StringOrDate {
-    String(String),
-    Date(rbdc::Date),
+pub fn parse_optional_int<F>(item: Option<&String>, name: &'static str) -> Result<F, FieldParseError>
+where
+    F: FromStr<Err=ParseIntError>,
+{
+    item.ok_or_else(|| FieldParseError::Empty(name))?
+        .parse()
+        .map_err(|e: ParseIntError| FieldParseError::Conversion(e.into(), name, type_name::<F>()))
 }
-

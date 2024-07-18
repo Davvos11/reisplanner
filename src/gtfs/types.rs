@@ -186,7 +186,7 @@ crud_trait!(Stop {});
 
 #[derive(Deserialize_repr, Serialize_repr, Default, PartialEq, Debug)]
 #[repr(u8)]
-enum PickupType {
+pub enum PickupType {
     #[default]
     Regular = 0,
     NotAvailable = 1,
