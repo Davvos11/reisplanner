@@ -90,7 +90,7 @@ async fn parse_gtfs_realtime_entry(entry: &FeedEntity, db: &dyn Executor) -> Res
                             StopTime::select_by_sequence_and_trip(db, &stop_sequence, &trip_id).await?
                         }
                         None => {
-                            eprintln!("Update for trip_id {:?} has no stop_id or _sequence,\n\thas arrival: {:?}\n\thas departure: {:?}", trip_update.trip.trip_id, update.arrival, update.departure);
+                            eprintln!("Update for trip_id {:?} has no stop_id or _sequence at index {i},\n\thas arrival: {:?}\n\thas departure: {:?}", trip_update.trip.trip_id, update.arrival, update.departure);
                             continue;
                         }
                     }
@@ -131,10 +131,11 @@ async fn parse_gtfs_realtime_entry(entry: &FeedEntity, db: &dyn Executor) -> Res
 }
 
 pub async fn run_gtfs_realtime(db: &RBatis) -> Result<(), GtfsError> {
+    println!("Run realtime");
     let mut transaction = db.acquire_begin().await?;
 
     let last_updated = get_last_updated(db).await?
-        .map(|dt| SystemTime::from(dt));
+        .map(SystemTime::from);
     
     for stream_title in ["alerts", "trainUpdates", "tripUpdates", "vehiclePositions"] {
         let url = format!("https://gtfs.ovapi.nl/nl/{stream_title}.pb");

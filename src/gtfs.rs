@@ -184,7 +184,8 @@ const URL: &str = "https://gtfs.ovapi.nl/nl/gtfs-nl.zip";
 const FOLDER: &str = "gtfs";
 
 
-pub async fn run_gtfs(db: &RBatis, force_parse: bool) -> Result<(), GtfsError> {
+async fn download_parse_gtfs(db: &RBatis, force_parse: bool) -> Result<(), GtfsError> {
+    println!("Run planning");
     // Check if a previous run of the program has failed while downloading or parsing.
     let previous_errors = check_error_files()
         .map_err(|e| GtfsError::Misc(e.into()))?;
@@ -228,5 +229,23 @@ pub async fn run_gtfs(db: &RBatis, force_parse: bool) -> Result<(), GtfsError> {
 
     transaction.commit().await?;
 
+    Ok(())
+}
+
+pub async fn run_gtfs(db: &RBatis, force_parse: bool) -> Result<(), GtfsError> {
+    // Run planning and write error files on error, remove any previous error files on success
+    match download_parse_gtfs(db, force_parse).await {
+        Ok(()) => {
+            remove_error_files()?
+        }
+        Err(e) => {
+            let error_name = match e {
+                GtfsError::Parse(_) | GtfsError::Database(_) => PARSE_ERROR,
+                _ => DOWNLOAD_ERROR,
+            };
+            write_error_file(error_name, &e)?;
+            Err(e)?;
+        }
+    }
     Ok(())
 }

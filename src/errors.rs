@@ -10,6 +10,8 @@ pub enum GtfsError {
     Parse(#[from] ParseError),
     #[error(transparent)]
     Database(#[from] rbatis::Error),
+    #[error("Failed to access files")]
+    IO(#[from] io::Error),
     #[error(transparent)]
     Misc(#[from] anyhow::Error),
 }
