@@ -1,6 +1,5 @@
 extern crate protobuf;
 
-use anyhow::Context;
 use crate::database::init_db;
 use crate::errors::GtfsError;
 use crate::gtfs::{DOWNLOAD_ERROR, PARSE_ERROR, remove_error_files, run_gtfs, write_error_file};
@@ -16,9 +15,9 @@ mod errors;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let db = init_db().await
-        .context("Test")?;
+    let db = init_db().await?;
     println!("Run planning");
+    // Run planning and write error files on error, remove any previous error files on success
     match run_gtfs(&db, false).await {
         Ok(()) => {
             remove_error_files()?

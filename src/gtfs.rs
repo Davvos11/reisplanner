@@ -10,6 +10,7 @@ use itertools::Itertools;
 use rbatis::executor::Executor;
 use rbatis::RBatis;
 use reqwest::Client;
+use reqwest::header::USER_AGENT;
 use serde::{Deserialize, Serialize};
 use zip::ZipArchive;
 
@@ -23,6 +24,14 @@ use crate::rbatis_wrapper::DatabaseModel;
 
 pub mod types;
 
+const MAINTAINER_EMAIL: &str = "vosdavid2@gmail.com";
+const APP_NAME: &str = env!("CARGO_PKG_NAME");
+const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
+
+pub fn get_contact_info() -> String {
+    format!("{MAINTAINER_EMAIL}/{APP_NAME}-{APP_VERSION}")
+}
+
 /// Download and extract a GTFS zip
 /// Returns a Vec of PathBuf of each extracted file
 async fn download_gtfs(url: &str, folder_path: &str) -> Result<Vec<PathBuf>, DownloadError> {
@@ -31,7 +40,11 @@ async fn download_gtfs(url: &str, folder_path: &str) -> Result<Vec<PathBuf>, Dow
     let client = Client::builder()
         .build()?;
 
-    let response = client.get(url).send().await?.error_for_status()?;
+    let response = client
+        .get(url)
+        .header(USER_AGENT, get_contact_info())
+        .send().await?
+        .error_for_status()?;
     let mut archive = ZipArchive::new(
         Cursor::new(response.bytes().await?)
     )?;
@@ -50,6 +63,7 @@ async fn has_updated(url: &str, file_path: &str) -> Result<bool, DownloadError> 
 
     let response = Client::new()
         .head(url)
+        .header(USER_AGENT, get_contact_info())
         .send().await?;
 
     if response.status().is_success() {

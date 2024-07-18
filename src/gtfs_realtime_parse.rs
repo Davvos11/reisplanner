@@ -5,16 +5,22 @@ use std::io::Write;
 use protobuf::{EnumOrUnknown, Message};
 use rbatis::executor::Executor;
 use rbatis::RBatis;
-use reqwest::get;
+use reqwest::Client;
+use reqwest::header::USER_AGENT;
 
 use crate::errors::{DownloadError, GtfsError, ParseError};
+use crate::gtfs::get_contact_info;
 use crate::gtfs::types::{StopTime, Trip};
 use crate::gtfs_realtime::gtfs_realtime::{FeedEntity, FeedMessage};
 use crate::gtfs_realtime::gtfs_realtime::feed_header::Incrementality::FULL_DATASET;
 use crate::utils::{parse_int, parse_optional_int, parse_optional_int_option};
 
 async fn download_gtfs_realtime(url: &String, file_path: &String) -> Result<(), DownloadError> {
-    let response = get(url).await?.error_for_status()?;
+    let response = Client::new()
+        .get(url)
+        .header(USER_AGENT, get_contact_info())
+        .send().await?
+        .error_for_status()?;
     let mut file = File::create(file_path)?;
     file.write_all(&response.bytes().await?)?;
     Ok(())
