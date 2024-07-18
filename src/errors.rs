@@ -45,6 +45,6 @@ pub enum FieldParseError {
     #[error("Failed to parse {1} into {2}")]
     Conversion(#[source] anyhow::Error, &'static str, &'static str),
     #[error("Empty value for {0}")]
-    Empty(&'static str),
+    Empty(String),
 }
 

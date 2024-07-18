@@ -24,6 +24,7 @@ pub async fn init_db() -> anyhow::Result<RBatis> {
     // Add indices
     add_index(&rb, "trip", &["trip_id"]).await?;
     add_index(&rb, "stop_time", &["stop_id", "trip_id"]).await?;
+    add_index(&rb, "stop_time", &["stop_sequence", "trip_id"]).await?;
 
     Ok(rb)
 }

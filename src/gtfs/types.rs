@@ -184,7 +184,7 @@ impl Default for Stop {
 crud_trait!(Stop {});
 
 
-#[derive(Deserialize_repr, Serialize_repr, Default, PartialEq, Debug)]
+#[derive(Deserialize_repr, Serialize_repr, Default, PartialEq, Debug, Clone)]
 #[repr(u8)]
 pub enum PickupType {
     #[default]
@@ -198,10 +198,11 @@ pub enum PickupType {
 }
 
 // Struct for stop_times.txt
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct StopTime {
     pub trip_id: u32,
     pub stop_sequence: u32,
+    // TODO u32 instead of string?
     pub stop_id: String,
     pub stop_headsign: Option<String>,
     #[serde(deserialize_with = "deserialize_time_tuple")]
@@ -243,6 +244,9 @@ impl Default for StopTime {
 crud_trait!(StopTime {});
 impl_select!(StopTime {
     select_by_id_and_trip(stop_id:&u32,trip_id:&u32) => "`where stop_id = #{stop_id} and trip_id = #{trip_id}`"
+});
+impl_select!(StopTime {
+    select_by_sequence_and_trip(stop_sequence:&u32,trip_id:&u32) => "`where stop_sequence = #{stop_sequence} and trip_id = #{trip_id}`"
 });
 impl_update!(StopTime {
     update_by_id_and_trip(stop_id:&u32,trip_id:&u32) => "`where stop_id = #{stop_id} and trip_id = #{trip_id}`"

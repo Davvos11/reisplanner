@@ -107,11 +107,29 @@ where
     deserializer.deserialize_any(DateVisitor)
 }
 
+pub fn parse_int<F>(item: &String, name: &'static str) -> Result<F, FieldParseError>
+where
+    F: FromStr<Err=ParseIntError>,
+{
+    item.parse()
+        .map_err(|e: ParseIntError| FieldParseError::Conversion(e.into(), name, type_name::<F>()))
+}
+
 pub fn parse_optional_int<F>(item: Option<&String>, name: &'static str) -> Result<F, FieldParseError>
 where
     F: FromStr<Err=ParseIntError>,
 {
-    item.ok_or_else(|| FieldParseError::Empty(name))?
-        .parse()
-        .map_err(|e: ParseIntError| FieldParseError::Conversion(e.into(), name, type_name::<F>()))
+    parse_int(item.ok_or_else(|| FieldParseError::Empty(name.to_string()))?, name)
+}
+
+pub fn parse_optional_int_option<F>(item: Option<&String>, name: &'static str) -> Result<Option<F>, FieldParseError>
+where
+    F: FromStr<Err=ParseIntError>,
+{
+    Ok(
+        match item {
+            None => { None }
+            Some(item) => { Some(parse_int(item, name)?) }
+        }
+    )
 }
