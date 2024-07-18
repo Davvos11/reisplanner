@@ -128,3 +128,7 @@ Cargo.lock
 
 # Generated files by build.rs
 /src/gtfs_realtime
+
+sqlite*
+*.pb
+gtfs
