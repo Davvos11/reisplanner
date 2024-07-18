@@ -1,4 +1,3 @@
-use std::error::Error;
 use std::fs::File;
 use std::io::Read;
 use std::io::Write;
@@ -7,24 +6,27 @@ use protobuf::{EnumOrUnknown, Message};
 use rbatis::executor::Executor;
 use rbatis::RBatis;
 use reqwest::get;
-use crate::gtfs::types::{StopTime, Trip};
 
+use crate::errors::{DownloadError, GtfsError, ParseError};
+use crate::gtfs::types::{StopTime, Trip};
 use crate::gtfs_realtime::gtfs_realtime::{FeedEntity, FeedMessage};
 use crate::gtfs_realtime::gtfs_realtime::feed_header::Incrementality::FULL_DATASET;
+use crate::utils::parse_optional_int;
 
-async fn download_gtfs_realtime(url: &String, file_path: &String) -> Result<(), Box<dyn Error>> {
+async fn download_gtfs_realtime(url: &String, file_path: &String) -> Result<(), DownloadError> {
     let response = get(url).await?.error_for_status()?;
     let mut file = File::create(file_path)?;
     file.write_all(&response.bytes().await?)?;
     Ok(())
 }
 
-async fn parse_gtfs_realtime(file_path: &String, db: &dyn Executor) -> Result<(), Box<dyn Error>> {
-    let mut file = File::open(file_path)?;
+async fn parse_gtfs_realtime(file_path: &String, db: &dyn Executor) -> Result<(), GtfsError> {
+    let mut file = File::open(file_path).map_err(DownloadError::FileSystem)?;
     let mut buffer = Vec::new();
-    file.read_to_end(&mut buffer)?;
+    file.read_to_end(&mut buffer).map_err(DownloadError::FileSystem)?;
 
-    let feed = FeedMessage::parse_from_bytes(&buffer)?;
+    let feed = FeedMessage::parse_from_bytes(&buffer)
+        .map_err(|e| ParseError::Protobuf(e, file_path.to_string()))?;
 
     assert_eq!(feed.header.incrementality, Some(EnumOrUnknown::new(FULL_DATASET)),
                "Full dataset expected");
@@ -35,29 +37,24 @@ async fn parse_gtfs_realtime(file_path: &String, db: &dyn Executor) -> Result<()
     Ok(())
 }
 
-async fn parse_gtfs_realtime_entry(entry: &FeedEntity, db: &dyn Executor) -> Result<(), Box<dyn Error>> {
+async fn parse_gtfs_realtime_entry(entry: &FeedEntity, db: &dyn Executor) -> Result<(), GtfsError> {
     if let Some(trip_update) = entry.trip_update.as_ref() {
-        assert!(&trip_update.trip.trip_id.is_some(), "Trip id should be known");
-        // TODO handle parse error
-        let trip_id: u32 = match trip_update.trip.trip_id.as_ref() {
-            Some(id) => {id.parse().unwrap_or(0)}
-            None => {0}
-        };
+        let trip_id = parse_optional_int(trip_update.trip.trip_id.as_ref(), "trip_id")
+            .map_err(|e|ParseError::Database(e, Box::new(trip_update.clone())))?;
+
         for update in &trip_update.stop_time_update {
-            // TODO handle parse error
-            let stop_id: u32 = match update.stop_id.as_ref() {
-                Some(id) => {id.parse().unwrap_or(0)}
-                None => {0}
-            };
+            let stop_id = parse_optional_int(update.stop_id.as_ref(), "stop_id")
+                .map_err(|e|ParseError::Database(e, Box::new(update.clone())))?;
             let mut result = StopTime::select_by_id_and_trip(db, &stop_id, &trip_id).await?;
             assert!(result.len() <= 1, "No more than one trip should have this id");
+
             // TODO use certainty and/or schedule relationship
             if let Some(db_stop_time) = result.first_mut() {
                 // TODO maybe also set if None?
-                if let delay@Some(_) = update.arrival.delay {
+                if let delay @ Some(_) = update.arrival.delay {
                     db_stop_time.arrival_delay = delay;
                 }
-                if let delay@Some(_) = update.departure.delay {
+                if let delay @ Some(_) = update.departure.delay {
                     db_stop_time.departure_delay = delay;
                 }
                 StopTime::update_by_id_and_trip(db, db_stop_time, &stop_id, &trip_id).await?;
@@ -81,7 +78,7 @@ async fn parse_gtfs_realtime_entry(entry: &FeedEntity, db: &dyn Executor) -> Res
     Ok(())
 }
 
-pub async fn run_gtfs_realtime(db: &RBatis) -> Result<(), Box<dyn Error>> {
+pub async fn run_gtfs_realtime(db: &RBatis) -> Result<(), GtfsError> {
     let mut transaction = db.acquire_begin().await?;
 
     for stream_title in ["alerts", "trainUpdates", "tripUpdates", "vehiclePositions"] {

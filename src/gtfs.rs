@@ -1,7 +1,7 @@
-use std::error::Error;
-use std::fs;
+use std::{fs, io};
+use std::fmt::Debug;
 use std::fs::File;
-use std::io::Cursor;
+use std::io::{Cursor, Write};
 use std::path::{Path, PathBuf};
 
 use csv::{DeserializeRecordsIter, ReaderBuilder};
@@ -11,9 +11,13 @@ use rbatis::executor::Executor;
 use rbatis::RBatis;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use tokio::time::sleep;
 use zip::ZipArchive;
 
+use DownloadError::ParseRemoteModified;
+
+use crate::errors::{DownloadError, GtfsError};
+use crate::errors::DownloadError::{FileSystem, ParseLocalModified};
+use crate::errors::ParseError::Csv;
 use crate::gtfs::types::{Agency, CalendarDate, FeedInfo, Route, Shape, Stop, StopTime, Transfer, Trip};
 use crate::rbatis_wrapper::DatabaseModel;
 
@@ -21,7 +25,7 @@ pub mod types;
 
 /// Download and extract a GTFS zip
 /// Returns a Vec of PathBuf of each extracted file
-async fn download_gtfs(url: &str, folder_path: &str) -> Result<Vec<PathBuf>, Box<dyn Error>> {
+async fn download_gtfs(url: &str, folder_path: &str) -> Result<Vec<PathBuf>, DownloadError> {
     println!("Downloading, this will take a while...");
 
     let client = Client::builder()
@@ -39,7 +43,7 @@ async fn download_gtfs(url: &str, folder_path: &str) -> Result<Vec<PathBuf>, Box
     Ok(extracted_paths)
 }
 
-async fn should_download(url: &str, file_path: &str) -> Result<bool, Box<dyn Error>> {
+async fn has_updated(url: &str, file_path: &str) -> Result<bool, DownloadError> {
     if !Path::new(file_path).exists() {
         return Ok(true);
     }
@@ -50,21 +54,27 @@ async fn should_download(url: &str, file_path: &str) -> Result<bool, Box<dyn Err
 
     if response.status().is_success() {
         if let Some(last_modified) = response.headers().get(reqwest::header::LAST_MODIFIED) {
-            let last_modified = last_modified.to_str()?;
-            let remote_modified_time = httpdate::parse_http_date(last_modified)?;
+            let last_modified = last_modified.to_str()
+                .map_err(|e| ParseRemoteModified(e.into()))?;
+            let remote_modified_time = httpdate::parse_http_date(last_modified)
+                .map_err(|e| ParseRemoteModified(e.into()))?;
 
-            let mut metadata = fs::metadata(file_path)?;
+            let mut metadata = fs::metadata(file_path)
+                .map_err(|e| ParseLocalModified(e.into()))?;
             if metadata.is_dir() {
-                if let Some(first_file) = fs::read_dir(file_path)?
+                if let Some(first_file) = fs::read_dir(file_path)
+                    .map_err(|e| ParseLocalModified(e.into()))?
                     .filter_map(Result::ok)
                     .find(|f| f.metadata().is_ok_and(|f| f.is_file()))
                 {
-                    metadata = first_file.metadata()?;
+                    metadata = first_file.metadata()
+                        .map_err(|e| ParseLocalModified(e.into()))?;
                 } else {
                     return Ok(false);
                 }
             }
-            let local_modified_time = metadata.modified()?;
+            let local_modified_time = metadata.modified()
+                .map_err(|e| ParseLocalModified(e.into()))?;
 
             return Ok(remote_modified_time > local_modified_time);
         }
@@ -73,15 +83,65 @@ async fn should_download(url: &str, file_path: &str) -> Result<bool, Box<dyn Err
     Ok(false)
 }
 
+pub const DOWNLOAD_ERROR: &str = "download";
+pub const PARSE_ERROR: &str = "parse";
+pub const ERRORS: &[&str] = &[DOWNLOAD_ERROR, PARSE_ERROR];
+
+pub fn write_error_file<T: Debug>(name: &'static str, error: &T) -> io::Result<()> {
+    let path = Path::new(FOLDER).join(name);
+    // Create all necessary subdirectories
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+
+    // Create and write to the file
+    let mut file = File::create(path)?;
+    let content = format!("{:?}", error);
+    file.write_all(content.as_bytes())?;
+    Ok(())
+}
+
+pub fn remove_error_files() -> io::Result<()> {
+    for name in ERRORS {
+        let path = Path::new(FOLDER).join(name);
+        // Check if the file exists
+        if path.exists() {
+            // Remove the file
+            fs::remove_file(path)?;
+        }
+    }
+    Ok(())
+}
+
+enum ErrorFiles {
+    DownloadError,
+    ParseError,
+}
+
+fn check_error_files() -> io::Result<Option<ErrorFiles>> {
+    for &name in ERRORS {
+        let path = Path::new(FOLDER).join(name);
+        // Check if the file exists
+        if path.exists() {
+            match name {
+                DOWNLOAD_ERROR => { return Ok(Some(ErrorFiles::DownloadError)); }
+                PARSE_ERROR => { return Ok(Some(ErrorFiles::ParseError)); }
+                _ => { panic!("Not all error files implemented in check_error_files"); }
+            }
+        }
+    }
+    Ok(None)
+}
+
 const DESERIALIZE_CHUNK_SIZE: u64 = 500;
 
-async fn gtfs_to_db<T>(db: &dyn Executor, file_path: &str) -> Result<(), Box<dyn Error>>
-    where
-        T: for<'de> Deserialize<'de> + Serialize + DatabaseModel<T>,
+async fn gtfs_to_db<T>(db: &dyn Executor, file_path: &str) -> Result<(), GtfsError>
+where
+    T: for<'de> Deserialize<'de> + Serialize + DatabaseModel<T>,
 {
     println!("Saving {file_path} to database...");
     // Open file to count the length for the progressbar
-    let file = File::open(file_path)?;
+    let file = File::open(file_path).map_err(FileSystem)?;
     let mut reader = ReaderBuilder::new().from_reader(file);
     let records: DeserializeRecordsIter<File, T> = reader.deserialize();
     let length = records.count() as u64;
@@ -90,17 +150,18 @@ async fn gtfs_to_db<T>(db: &dyn Executor, file_path: &str) -> Result<(), Box<dyn
     T::delete_all(db).await?;
 
     // Reopen the file to actually read it
-    let file = File::open(file_path)?;
+    let file = File::open(file_path).map_err(FileSystem)?;
     let mut reader = ReaderBuilder::new().from_reader(file);
     let records: DeserializeRecordsIter<File, T> = reader.deserialize();
 
     for chunk in &records.chunks(DESERIALIZE_CHUNK_SIZE as usize) {
-        let items: Vec<_> = chunk.into_iter().collect::<Result<_, _>>()?;
+        let items: Vec<_> = chunk.into_iter().collect::<Result<_, _>>()
+            .map_err(|e| Csv(e, file_path.to_string()))?;
 
         T::insert_batch(db, &items, DESERIALIZE_CHUNK_SIZE).await?;
         bar.inc(DESERIALIZE_CHUNK_SIZE);
     }
-    
+
     bar.finish();
     Ok(())
 }
@@ -109,17 +170,36 @@ const URL: &str = "https://gtfs.ovapi.nl/nl/gtfs-nl.zip";
 const FOLDER: &str = "gtfs";
 
 
-pub async fn run_gtfs(db: &RBatis, force: bool) -> Result<(), Box<dyn Error>> {
-    let has_updated = should_download(URL, FOLDER).await?;
-
-    if has_updated {
+pub async fn run_gtfs(db: &RBatis, force_parse: bool) -> Result<(), GtfsError> {
+    // Check if a previous run of the program has failed while downloading or parsing.
+    let previous_errors = check_error_files()
+        .map_err(|e| GtfsError::Misc(e.into()))?;
+    
+    // Determine if we should download the GTFS files
+    let has_updated = match has_updated(URL, FOLDER).await {
+        Err(ParseLocalModified(_)) => true,
+        result => result?,
+    };
+    let mut should_download = has_updated;
+    if let Some(ErrorFiles::DownloadError) = previous_errors {
+        should_download = true;
+    }
+    
+    // Download GTFS files if needed
+    if should_download {
         download_gtfs(URL, FOLDER).await?;
     }
 
-    if !(has_updated | force) {
-        return Ok(())
+    // Determine if we should parse the GTFS files and add them to the database
+    let mut should_parse = has_updated | force_parse;
+    if let Some(ErrorFiles::ParseError) = previous_errors {
+        should_parse = true;
+    }
+    if !should_parse {
+        return Ok(());
     }
 
+    // Parse data and sync with db
     let mut transaction = db.acquire_begin().await?;
 
     gtfs_to_db::<Agency>(&transaction, format!("{FOLDER}/agency.txt").as_str()).await?;

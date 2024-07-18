@@ -21,6 +21,8 @@ fastdate = "0.3.28"
 fast_log = "1.6.16"
 log = "0.4.22"
 indicatif = "0.17.8"
+thiserror = "1.0.61"
+anyhow = "1.0.86"
 
 [build-dependencies]
 protobuf-codegen = "3.4.0"

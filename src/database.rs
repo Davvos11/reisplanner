@@ -1,10 +1,10 @@
-use std::error::Error;
 use rbatis::RBatis;
 use rbatis::table_sync::SqliteTableMapper;
 use serde::Serialize;
+
 use crate::gtfs::types::{Agency, CalendarDate, FeedInfo, Route, Shape, Stop, StopTime, Transfer, Trip};
 
-pub async fn init_db() -> Result<RBatis, Box<dyn Error>> {
+pub async fn init_db() -> anyhow::Result<RBatis> {
     let rb = RBatis::new();
     rb.init(
         rbdc_sqlite::driver::SqliteDriver {},
@@ -28,7 +28,7 @@ pub async fn init_db() -> Result<RBatis, Box<dyn Error>> {
     Ok(rb)
 }
 
-async fn sync_table<T>(rb: &RBatis, table_name: &str) -> Result<(), Box<dyn Error>>
+async fn sync_table<T>(rb: &RBatis, table_name: &str) -> anyhow::Result<()>
 where
     T: Default + Serialize,
 {
@@ -41,7 +41,7 @@ where
     Ok(())
 }
 
-async fn add_index(rb: &RBatis, table: &str, columns: &[&str]) -> Result<(), Box<dyn Error>> {
+async fn add_index(rb: &RBatis, table: &str, columns: &[&str]) -> anyhow::Result<()> {
     let name = columns.join("_") + "_idx";
     rb.query(
         format!("CREATE INDEX IF NOT EXISTS {name} ON {table} ({});",
