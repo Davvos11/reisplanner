@@ -13,6 +13,11 @@ where T: for<'de> Deserialize<'de> + Serialize
     async fn delete_all(
         executor: &dyn Executor
     ) -> Result<rbatis::rbdc::db::ExecResult, rbatis::rbdc::Error>;
+
+    async fn update_all(
+        executor: &dyn Executor,
+        table: &T,
+    ) -> Result<rbatis::rbdc::db::ExecResult, rbatis::rbdc::Error>;
 }
 
 
@@ -21,6 +26,7 @@ macro_rules! crud_trait {
     ($table:ty{}) => {
         rbatis::crud!($table {});
         rbatis::impl_delete!($table {delete_all() => "``"});
+        rbatis::impl_update!($table {update_all() => "``"});
 
         impl DatabaseModel<$table> for $table {
             async fn insert_batch(executor: &dyn Executor, tables: &[$table], batch_size: u64) -> Result<ExecResult, Error> {
@@ -29,6 +35,10 @@ macro_rules! crud_trait {
             
             async fn delete_all(executor: &dyn Executor) -> Result<ExecResult, Error> {
                 <$table>::delete_all(executor).await
+            }
+            
+            async fn update_all(executor: &dyn Executor, table: &$table) -> Result<ExecResult, Error> {
+                <$table>::update_all(executor, table).await
             }
         }
     };

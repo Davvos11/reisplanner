@@ -1,28 +1,56 @@
 use std::fs::File;
 use std::io::Read;
 use std::io::Write;
+use std::time::SystemTime;
 
 use protobuf::{EnumOrUnknown, Message};
+use rbatis::{RBatis, rbdc};
 use rbatis::executor::Executor;
-use rbatis::RBatis;
 use reqwest::Client;
-use reqwest::header::USER_AGENT;
+use reqwest::header::{IF_MODIFIED_SINCE, USER_AGENT};
 
 use crate::errors::{DownloadError, GtfsError, ParseError};
 use crate::gtfs::get_contact_info;
-use crate::gtfs::types::{StopTime, Trip};
+use crate::gtfs::types::{LastUpdated, StopTime, Trip};
 use crate::gtfs_realtime::gtfs_realtime::{FeedEntity, FeedMessage};
 use crate::gtfs_realtime::gtfs_realtime::feed_header::Incrementality::FULL_DATASET;
 use crate::utils::{parse_int, parse_optional_int, parse_optional_int_option};
 
-async fn download_gtfs_realtime(url: &String, file_path: &String) -> Result<(), DownloadError> {
+async fn download_gtfs_realtime(url: &String, file_path: &String, last_updated: Option<SystemTime>) -> Result<(), DownloadError> {
+    let last_updated = match last_updated {
+        None => {SystemTime::UNIX_EPOCH}
+        Some(datetime) => {datetime}
+    };
+    let last_updated = httpdate::fmt_http_date(last_updated);
     let response = Client::new()
         .get(url)
         .header(USER_AGENT, get_contact_info())
+        .header(IF_MODIFIED_SINCE, last_updated)
         .send().await?
         .error_for_status()?;
     let mut file = File::create(file_path)?;
     file.write_all(&response.bytes().await?)?;
+    Ok(())
+}
+
+async fn get_last_updated(db: &dyn Executor) -> Result<Option<rbdc::DateTime>, GtfsError> {
+    let result = LastUpdated::select_all(db).await?;
+    assert!(result.len() <= 1, "There should not be multiple last_updated rows");
+    if let Some(last_updated) = result.first() {
+        Ok(Some(last_updated.last_updated.clone()))
+    } else {
+        Ok(None)
+    }
+}
+
+async fn set_last_updated(db: &dyn Executor) -> Result<(), GtfsError> {
+    let now = rbdc::DateTime::now();
+    let item = LastUpdated {last_updated: now};
+    if get_last_updated(db).await?.is_some() {
+        LastUpdated::update_all(db, &item).await?;
+    } else {
+       LastUpdated::insert(db, &item).await?;
+    }
     Ok(())
 }
 
@@ -105,15 +133,20 @@ async fn parse_gtfs_realtime_entry(entry: &FeedEntity, db: &dyn Executor) -> Res
 pub async fn run_gtfs_realtime(db: &RBatis) -> Result<(), GtfsError> {
     let mut transaction = db.acquire_begin().await?;
 
+    let last_updated = get_last_updated(db).await?
+        .map(|dt| SystemTime::from(dt));
+    
     for stream_title in ["alerts", "trainUpdates", "tripUpdates", "vehiclePositions"] {
         let url = format!("https://gtfs.ovapi.nl/nl/{stream_title}.pb");
         let file_path = format!("{stream_title}.pb");
 
-        download_gtfs_realtime(&url, &file_path).await?;
+        download_gtfs_realtime(&url, &file_path, last_updated).await?;
         parse_gtfs_realtime(&file_path, &transaction).await?;
     }
 
     transaction.commit().await?;
+    
+    set_last_updated(db).await?;
 
     Ok(())
 }

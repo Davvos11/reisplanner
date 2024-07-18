@@ -2,7 +2,7 @@ use rbatis::RBatis;
 use rbatis::table_sync::SqliteTableMapper;
 use serde::Serialize;
 
-use crate::gtfs::types::{Agency, CalendarDate, FeedInfo, Route, Shape, Stop, StopTime, Transfer, Trip};
+use crate::gtfs::types::{Agency, CalendarDate, FeedInfo, LastUpdated, Route, Shape, Stop, StopTime, Transfer, Trip};
 
 pub async fn init_db() -> anyhow::Result<RBatis> {
     let rb = RBatis::new();
@@ -20,6 +20,7 @@ pub async fn init_db() -> anyhow::Result<RBatis> {
     sync_table::<StopTime>(&rb, "stop_time").await?;
     sync_table::<Transfer>(&rb, "transfer").await?;
     sync_table::<Trip>(&rb, "trip").await?;
+    sync_table::<LastUpdated>(&rb, "last_updated").await?;
 
     // Add indices
     add_index(&rb, "trip", &["trip_id"]).await?;

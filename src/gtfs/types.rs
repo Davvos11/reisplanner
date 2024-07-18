@@ -1,5 +1,5 @@
 use rbatis::executor::Executor;
-use rbatis::{impl_select, impl_update};
+use rbatis::{impl_select, impl_update, rbdc};
 use rbatis::rbdc::{Date, Error};
 use rbatis::rbdc::db::ExecResult;
 use serde::{Deserialize, Serialize};
@@ -344,5 +344,10 @@ impl Default for Trip {
         }
     }
 }
-
 crud_trait!(Trip {});
+
+#[derive(Default, Debug, Deserialize, Serialize)]
+pub struct LastUpdated {
+    pub last_updated: rbdc::DateTime,
+}
+crud_trait!(LastUpdated {});
