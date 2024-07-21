@@ -189,7 +189,7 @@ async fn download_parse_gtfs(db: &RBatis, force_parse: bool) -> Result<(), GtfsE
     // Check if a previous run of the program has failed while downloading or parsing.
     let previous_errors = check_error_files()
         .map_err(|e| GtfsError::Misc(e.into()))?;
-    
+
     // Determine if we should download the GTFS files
     let has_updated = match has_updated(URL, FOLDER).await {
         Err(ParseLocalModified(_)) => true,
@@ -199,7 +199,7 @@ async fn download_parse_gtfs(db: &RBatis, force_parse: bool) -> Result<(), GtfsE
     if let Some(ErrorFiles::DownloadError) = previous_errors {
         should_download = true;
     }
-    
+
     // Download GTFS files if needed
     if should_download {
         download_gtfs(URL, FOLDER).await?;
@@ -226,9 +226,9 @@ async fn download_parse_gtfs(db: &RBatis, force_parse: bool) -> Result<(), GtfsE
     gtfs_to_db::<Trip>(&transaction, format!("{FOLDER}/trips.txt").as_str()).await?;
     gtfs_to_db::<Shape>(&transaction, format!("{FOLDER}/shapes.txt").as_str()).await?;
     gtfs_to_db::<StopTime>(&transaction, format!("{FOLDER}/stop_times.txt").as_str()).await?;
-
+    
     transaction.commit().await?;
-
+    
     Ok(())
 }
 

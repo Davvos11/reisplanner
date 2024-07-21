@@ -5,12 +5,8 @@ use serde::Serialize;
 use crate::gtfs::types::{Agency, CalendarDate, FeedInfo, LastUpdated, Route, Shape, Stop, StopTime, Transfer, Trip};
 
 pub async fn init_db() -> anyhow::Result<RBatis> {
-    let rb = RBatis::new();
-    rb.init(
-        rbdc_sqlite::driver::SqliteDriver {},
-        "sqlite://sqlite.db",
-    )?;
-
+    let rb = new_db_connection()?;
+    
     sync_table::<Agency>(&rb, "agency").await?;
     sync_table::<CalendarDate>(&rb, "calendar_date").await?;
     sync_table::<FeedInfo>(&rb, "feed_info").await?;
@@ -27,6 +23,18 @@ pub async fn init_db() -> anyhow::Result<RBatis> {
     add_index(&rb, "stop_time", &["stop_id", "trip_id"]).await?;
     add_index(&rb, "stop_time", &["stop_sequence", "trip_id"]).await?;
 
+    Ok(rb)
+}
+
+/// Get another database connection.
+/// `init_db` should be used for the first connection in order to properly
+/// set up the database.
+pub fn new_db_connection() -> anyhow::Result<RBatis> {
+    let rb = RBatis::new();
+    rb.init(
+        rbdc_sqlite::driver::SqliteDriver {},
+        "sqlite://sqlite.db",
+    )?;
     Ok(rb)
 }
 

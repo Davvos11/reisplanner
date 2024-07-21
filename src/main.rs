@@ -1,7 +1,10 @@
 extern crate protobuf;
 
+use tokio::time::{Duration, sleep};
+
 use crate::database::init_db;
 use crate::gtfs::run_gtfs;
+use crate::gtfs_daemon::start_gtfs_daemon;
 use crate::gtfs_realtime_parse::run_gtfs_realtime;
 
 pub mod gtfs_realtime;
@@ -11,6 +14,7 @@ pub mod utils;
 pub mod database;
 pub mod rbatis_wrapper;
 mod errors;
+mod gtfs_daemon;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -19,5 +23,10 @@ async fn main() -> anyhow::Result<()> {
     // Run initial GTFS download and database update (if needed)
     run_gtfs(&db, false).await?;
     run_gtfs_realtime(&db).await?;
-    Ok(())
+    // Start tasks daemon
+    start_gtfs_daemon(&db)?;
+
+    loop {
+        sleep(Duration::from_secs(60)).await;
+    }
 }

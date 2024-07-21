@@ -7,7 +7,7 @@ use protobuf::{EnumOrUnknown, Message};
 use rbatis::{RBatis, rbdc};
 use rbatis::executor::Executor;
 use reqwest::Client;
-use reqwest::header::{IF_MODIFIED_SINCE, USER_AGENT};
+use reqwest::header::{IF_MODIFIED_SINCE, LAST_MODIFIED, USER_AGENT};
 
 use crate::errors::{DownloadError, GtfsError, ParseError};
 use crate::gtfs::get_contact_info;
@@ -28,6 +28,7 @@ async fn download_gtfs_realtime(url: &String, file_path: &String, last_updated: 
         .header(IF_MODIFIED_SINCE, last_updated)
         .send().await?
         .error_for_status()?;
+    eprintln!("Realtime updated at: {:?}", &response.headers().get(LAST_MODIFIED));
     let mut file = File::create(file_path)?;
     file.write_all(&response.bytes().await?)?;
     Ok(())
