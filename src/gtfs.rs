@@ -184,7 +184,7 @@ const URL: &str = "https://gtfs.ovapi.nl/nl/gtfs-nl.zip";
 const FOLDER: &str = "gtfs";
 
 
-async fn download_parse_gtfs(db: &RBatis, force_parse: bool) -> Result<(), GtfsError> {
+async fn download_parse_gtfs(db: &RBatis) -> Result<(), GtfsError> {
     println!("Run planning");
     // Check if a previous run of the program has failed while downloading or parsing.
     let previous_errors = check_error_files()
@@ -206,7 +206,7 @@ async fn download_parse_gtfs(db: &RBatis, force_parse: bool) -> Result<(), GtfsE
     }
 
     // Determine if we should parse the GTFS files and add them to the database
-    let mut should_parse = has_updated | force_parse;
+    let mut should_parse = has_updated;
     if let Some(ErrorFiles::ParseError) = previous_errors {
         should_parse = true;
     }
@@ -226,15 +226,18 @@ async fn download_parse_gtfs(db: &RBatis, force_parse: bool) -> Result<(), GtfsE
     gtfs_to_db::<Trip>(&transaction, format!("{FOLDER}/trips.txt").as_str()).await?;
     gtfs_to_db::<Shape>(&transaction, format!("{FOLDER}/shapes.txt").as_str()).await?;
     gtfs_to_db::<StopTime>(&transaction, format!("{FOLDER}/stop_times.txt").as_str()).await?;
-    
+
     transaction.commit().await?;
-    
+
     Ok(())
 }
 
-pub async fn run_gtfs(db: &RBatis, force_parse: bool) -> Result<(), GtfsError> {
+pub async fn run_gtfs(db: &RBatis) -> Result<(), GtfsError> {
+    // Write initial "error file" to indicate a non-finished download / parse
+    write_error_file(DOWNLOAD_ERROR, &"Downloading...")?;
+    write_error_file(PARSE_ERROR, &"Parsing...")?;
     // Run planning and write error files on error, remove any previous error files on success
-    match download_parse_gtfs(db, force_parse).await {
+    match download_parse_gtfs(db).await {
         Ok(()) => {
             remove_error_files()?
         }
