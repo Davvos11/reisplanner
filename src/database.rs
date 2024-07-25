@@ -1,12 +1,15 @@
 use rbatis::RBatis;
 use rbatis::table_sync::SqliteTableMapper;
 use serde::Serialize;
-
+use tracing::{instrument, trace};
 use crate::gtfs::types::{Agency, CalendarDate, FeedInfo, LastUpdated, Route, Shape, Stop, StopTime, Transfer, Trip};
 
+#[instrument]
 pub async fn init_db() -> anyhow::Result<RBatis> {
+    trace!("Connecting to database");
     let rb = new_db_connection()?;
     
+    trace!("Setting up tables");
     sync_table::<Agency>(&rb, "agency").await?;
     sync_table::<CalendarDate>(&rb, "calendar_date").await?;
     sync_table::<FeedInfo>(&rb, "feed_info").await?;

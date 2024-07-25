@@ -1,15 +1,12 @@
 extern crate protobuf;
 
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
-
 use chrono::Utc;
-use tokio::signal::ctrl_c;
-use tokio::task;
 use tokio::time::{Duration as TokioDuration, sleep};
+use tracing::{error, info};
+use tracing_subscriber::EnvFilter;
 
 use crate::database::init_db;
-use crate::gtfs::{DOWNLOAD_ERROR, run_gtfs, write_error_file};
+use crate::gtfs::run_gtfs;
 use crate::gtfs_realtime_parse::run_gtfs_realtime;
 
 pub mod gtfs_realtime;
@@ -25,20 +22,23 @@ const REALTIME_INTERVAL: u64 = 60;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    // TODO use tracing instead of println
+    let log_level = EnvFilter::try_from_default_env()
+        .unwrap_or(EnvFilter::new("error,reisplanner=debug"));
+    tracing_subscriber::fmt().with_env_filter(log_level).init();
+    info!("Starting initial run");
+
     let db = init_db().await?;
     // Run initial GTFS download and database update (if needed)
     run_gtfs(&db).await?;
     run_gtfs_realtime(&db).await?;
-    
-    println!("Starting loop");
+
+    info!("Starting update loop");
     let mut previous_run = Utc::now().naive_utc();
     loop {
         sleep(TokioDuration::from_secs(REALTIME_INTERVAL)).await;
         let result = run_gtfs_realtime(&db).await;
         if let Err(e) = result {
-            // TODO better printing
-            eprintln!("Error in GTFS realtime loop {e:?}");
+            error!("Error in GTFS realtime loop {e:?}");
         }
 
         // Check if it has been 03:00 UTC
@@ -47,7 +47,7 @@ async fn main() -> anyhow::Result<()> {
         if previous_run < three_am && now >= three_am {
             let result = run_gtfs(&db).await;
             if let Err(e) = result {
-                eprintln!("Error in GTFS static loop {e:?}");
+                error!("Error in GTFS static loop {e:?}");
             }
         }
 

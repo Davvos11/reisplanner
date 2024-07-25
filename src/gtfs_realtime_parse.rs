@@ -8,7 +8,7 @@ use rbatis::{RBatis, rbdc};
 use rbatis::executor::Executor;
 use reqwest::Client;
 use reqwest::header::{IF_MODIFIED_SINCE, LAST_MODIFIED, USER_AGENT};
-
+use tracing::{debug, instrument, trace, warn};
 use crate::errors::{DownloadError, GtfsError, ParseError};
 use crate::gtfs::get_contact_info;
 use crate::gtfs::types::{LastUpdated, StopTime, Trip};
@@ -17,6 +17,7 @@ use crate::gtfs_realtime::gtfs_realtime::feed_header::Incrementality::FULL_DATAS
 use crate::utils::{parse_int, parse_optional_int, parse_optional_int_option};
 
 async fn download_gtfs_realtime(url: &String, file_path: &String, last_updated: Option<SystemTime>) -> Result<(), DownloadError> {
+    trace!("Downloading realtime GTFS data {url} to {file_path}");
     let last_updated = match last_updated {
         None => {SystemTime::UNIX_EPOCH}
         Some(datetime) => {datetime}
@@ -28,7 +29,7 @@ async fn download_gtfs_realtime(url: &String, file_path: &String, last_updated: 
         .header(IF_MODIFIED_SINCE, last_updated)
         .send().await?
         .error_for_status()?;
-    eprintln!("Realtime updated at: {:?}", &response.headers().get(LAST_MODIFIED));
+    trace!("Realtime updated at: {:?}", &response.headers().get(LAST_MODIFIED));
     let mut file = File::create(file_path)?;
     file.write_all(&response.bytes().await?)?;
     Ok(())
@@ -56,6 +57,7 @@ async fn set_last_updated(db: &dyn Executor) -> Result<(), GtfsError> {
 }
 
 async fn parse_gtfs_realtime(file_path: &String, db: &dyn Executor) -> Result<(), GtfsError> {
+    debug!("Saving {file_path} to database...");
     let mut file = File::open(file_path).map_err(DownloadError::FileSystem)?;
     let mut buffer = Vec::new();
     file.read_to_end(&mut buffer).map_err(DownloadError::FileSystem)?;
@@ -91,7 +93,7 @@ async fn parse_gtfs_realtime_entry(entry: &FeedEntity, db: &dyn Executor) -> Res
                             StopTime::select_by_sequence_and_trip(db, &stop_sequence, &trip_id).await?
                         }
                         None => {
-                            eprintln!("Update for trip_id {:?} has no stop_id or _sequence at index {i},\n\thas arrival: {:?}\n\thas departure: {:?}", trip_update.trip.trip_id, update.arrival, update.departure);
+                            warn!("Update for trip_id {:?} has no stop_id or _sequence at index {i},\n\thas arrival: {:?}\n\thas departure: {:?}", trip_update.trip.trip_id, update.arrival, update.departure);
                             continue;
                         }
                     }
@@ -131,13 +133,14 @@ async fn parse_gtfs_realtime_entry(entry: &FeedEntity, db: &dyn Executor) -> Res
     Ok(())
 }
 
+#[instrument(skip(db))]
 pub async fn run_gtfs_realtime(db: &RBatis) -> Result<(), GtfsError> {
-    println!("Run realtime");
+    debug!("Run realtime");
     let mut transaction = db.acquire_begin().await?;
 
     let last_updated = get_last_updated(db).await?
         .map(SystemTime::from);
-    
+
     for stream_title in ["alerts", "trainUpdates", "tripUpdates", "vehiclePositions"] {
         let url = format!("https://gtfs.ovapi.nl/nl/{stream_title}.pb");
         let file_path = format!("{stream_title}.pb");

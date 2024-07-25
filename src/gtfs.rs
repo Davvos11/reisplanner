@@ -12,6 +12,7 @@ use rbatis::RBatis;
 use reqwest::Client;
 use reqwest::header::USER_AGENT;
 use serde::{Deserialize, Serialize};
+use tracing::{debug, instrument};
 use zip::ZipArchive;
 
 use DownloadError::ParseRemoteModified;
@@ -35,7 +36,7 @@ pub fn get_contact_info() -> String {
 /// Download and extract a GTFS zip
 /// Returns a Vec of PathBuf of each extracted file
 async fn download_gtfs(url: &str, folder_path: &str) -> Result<Vec<PathBuf>, DownloadError> {
-    println!("Downloading, this will take a while...");
+    debug!("Downloading static GTFS data, this will take a while...");
 
     let client = Client::builder()
         .build()?;
@@ -153,7 +154,8 @@ async fn gtfs_to_db<T>(db: &dyn Executor, file_path: &str) -> Result<(), GtfsErr
 where
     T: for<'de> Deserialize<'de> + Serialize + DatabaseModel<T>,
 {
-    println!("Saving {file_path} to database...");
+    // TODO change this and bar according to debug level
+    eprintln!("Saving {file_path} to database...");
     // Open file to count the length for the progressbar
     let file = File::open(file_path).map_err(FileSystem)?;
     let mut reader = ReaderBuilder::new().from_reader(file);
@@ -185,7 +187,7 @@ const FOLDER: &str = "gtfs";
 
 
 async fn download_parse_gtfs(db: &RBatis) -> Result<(), GtfsError> {
-    println!("Run planning");
+    debug!("Run planning");
     // Check if a previous run of the program has failed while downloading or parsing.
     let previous_errors = check_error_files()
         .map_err(|e| GtfsError::Misc(e.into()))?;
@@ -203,6 +205,8 @@ async fn download_parse_gtfs(db: &RBatis) -> Result<(), GtfsError> {
     // Download GTFS files if needed
     if should_download {
         download_gtfs(URL, FOLDER).await?;
+    } else {
+        debug!("No need to download static GTFS");
     }
 
     // Determine if we should parse the GTFS files and add them to the database
@@ -211,6 +215,7 @@ async fn download_parse_gtfs(db: &RBatis) -> Result<(), GtfsError> {
         should_parse = true;
     }
     if !should_parse {
+        debug!("No need to parse static GTFS");
         return Ok(());
     }
 
@@ -232,10 +237,9 @@ async fn download_parse_gtfs(db: &RBatis) -> Result<(), GtfsError> {
     Ok(())
 }
 
+#[instrument(skip(db))]
 pub async fn run_gtfs(db: &RBatis) -> Result<(), GtfsError> {
-    // Write initial "error file" to indicate a non-finished download / parse
-    write_error_file(DOWNLOAD_ERROR, &"Downloading...")?;
-    write_error_file(PARSE_ERROR, &"Parsing...")?;
+    // TODO write error files on ctrl+c
     // Run planning and write error files on error, remove any previous error files on success
     match download_parse_gtfs(db).await {
         Ok(()) => {
