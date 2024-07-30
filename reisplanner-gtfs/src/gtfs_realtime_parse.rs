@@ -9,7 +9,7 @@ use rbatis::executor::Executor;
 use reqwest::Client;
 use reqwest::header::{IF_MODIFIED_SINCE, LAST_MODIFIED, USER_AGENT};
 use tracing::{debug, instrument, trace, warn};
-use crate::errors::{DownloadError, GtfsError, ParseError};
+use crate::errors::{DownloadError, FieldParseError, GtfsError, ParseError};
 use crate::gtfs::get_contact_info;
 use crate::gtfs::types::{LastUpdated, StopTime, Trip};
 use crate::gtfs_realtime::gtfs_realtime::{FeedEntity, FeedMessage};
@@ -19,8 +19,8 @@ use crate::utils::{parse_int, parse_optional_int, parse_optional_int_option};
 async fn download_gtfs_realtime(url: &String, file_path: &String, last_updated: Option<SystemTime>) -> Result<(), DownloadError> {
     trace!("Downloading realtime GTFS data {url} to {file_path}");
     let last_updated = match last_updated {
-        None => {SystemTime::UNIX_EPOCH}
-        Some(datetime) => {datetime}
+        None => { SystemTime::UNIX_EPOCH }
+        Some(datetime) => { datetime }
     };
     let last_updated = httpdate::fmt_http_date(last_updated);
     let response = Client::new()
@@ -47,11 +47,11 @@ async fn get_last_updated(db: &dyn Executor) -> Result<Option<rbdc::DateTime>, G
 
 async fn set_last_updated(db: &dyn Executor) -> Result<(), GtfsError> {
     let now = rbdc::DateTime::now();
-    let item = LastUpdated {last_updated: now};
+    let item = LastUpdated { last_updated: now };
     if get_last_updated(db).await?.is_some() {
         LastUpdated::update_all(db, &item).await?;
     } else {
-       LastUpdated::insert(db, &item).await?;
+        LastUpdated::insert(db, &item).await?;
     }
     Ok(())
 }
@@ -76,7 +76,15 @@ async fn parse_gtfs_realtime(file_path: &String, db: &dyn Executor) -> Result<()
 
 async fn parse_gtfs_realtime_entry(entry: &FeedEntity, db: &dyn Executor) -> Result<(), GtfsError> {
     if let Some(trip_update) = entry.trip_update.as_ref() {
-        let trip_id = parse_optional_int(trip_update.trip.trip_id.as_ref(), "trip_id")
+        let trip_id = parse_optional_int(trip_update.trip.trip_id.as_ref(), "trip_id");
+        
+        if let Err(FieldParseError::Conversion(_,_,_)) = trip_id {
+            // TODO implement trip_id strings
+            warn!("Failed to parse {:?}", trip_update.trip.trip_id);
+            return Ok(());
+        }
+
+        let trip_id = trip_id
             .map_err(|e| ParseError::Realtime(e, Box::new(trip_update.clone())))?;
 
         for (i, update) in trip_update.stop_time_update.iter().enumerate() {
@@ -150,8 +158,10 @@ pub async fn run_gtfs_realtime(db: &RBatis) -> Result<(), GtfsError> {
     }
 
     transaction.commit().await?;
-    
+
     set_last_updated(db).await?;
 
+    debug!("Realtime update finished");
+    
     Ok(())
 }
