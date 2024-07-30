@@ -1,4 +1,5 @@
-use std::fs::File;
+use std::env;
+use std::fs::{create_dir_all, File};
 use std::io::Read;
 use std::io::Write;
 use std::time::SystemTime;
@@ -151,7 +152,10 @@ pub async fn run_gtfs_realtime(db: &RBatis) -> Result<(), GtfsError> {
 
     for stream_title in ["alerts", "trainUpdates", "tripUpdates", "vehiclePositions"] {
         let url = format!("https://gtfs.ovapi.nl/nl/{stream_title}.pb");
-        let file_path = format!("{stream_title}.pb");
+        let tmp_dir = env::temp_dir().join("gtfs");
+        create_dir_all(&tmp_dir)?;
+        let file_path = tmp_dir.join(format!("{stream_title}.pb"))
+            .to_str().expect("Failed to parse temp directory").to_string();
 
         download_gtfs_realtime(&url, &file_path, last_updated).await?;
         parse_gtfs_realtime(&file_path, &transaction).await?;
