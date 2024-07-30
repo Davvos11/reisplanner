@@ -183,7 +183,7 @@ where
 }
 
 const URL: &str = "https://gtfs.ovapi.nl/nl/gtfs-nl.zip";
-const FOLDER: &str = "gtfs";
+const FOLDER: &str = "reisplanner-gtfs/gtfs";
 
 
 async fn download_parse_gtfs(db: &RBatis) -> Result<(), GtfsError> {

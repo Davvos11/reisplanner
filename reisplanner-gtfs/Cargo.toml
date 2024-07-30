@@ -1,0 +1,30 @@
+[package]
+name = "reisplanner"
+version = "0.1.0"
+edition = "2021"
+authors = ["vosdavid2@gmail.com"]
+
+[dependencies]
+reqwest = { version = "0.12.4", features = ["blocking"] }
+protobuf = "3.5.0"
+csv = "1.3.0"
+serde = { version = "1.0.203", features = ["derive"] }
+serde_repr = "0.1.19"
+httpdate = "1.0.3"
+zip = "2.1.3"
+chrono = "0.4.38"
+rbs = { git = "https://github.com/Davvos11/rbatis", package = "rbs" }
+rbatis = { git = "https://github.com/Davvos11/rbatis" }
+rbdc-sqlite = { git = "https://github.com/Davvos11/rbatis", package = "rbdc-sqlite" }
+tokio = { version = "1.38.0", features = ["full"] }
+itertools = "0.13.0"
+fastdate = "0.3.28"
+indicatif = "0.17.8"
+thiserror = "1.0.61"
+anyhow = "1.0.86"
+tracing = "0.1.40"
+tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
+
+[build-dependencies]
+protobuf-codegen = "3.4.0"
+vergen = { version = "9.0.0", features = ["build", "cargo"]}
