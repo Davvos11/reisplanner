@@ -10,12 +10,12 @@ use rbatis::executor::Executor;
 use reqwest::Client;
 use reqwest::header::{IF_MODIFIED_SINCE, LAST_MODIFIED, USER_AGENT};
 use tracing::{debug, instrument, trace, warn};
-use crate::errors::{DownloadError, FieldParseError, GtfsError, ParseError};
-use crate::gtfs::get_contact_info;
-use crate::gtfs::types::{LastUpdated, StopTime, Trip};
-use crate::gtfs_realtime::gtfs_realtime::{FeedEntity, FeedMessage};
-use crate::gtfs_realtime::gtfs_realtime::feed_header::Incrementality::FULL_DATASET;
-use crate::utils::{parse_int, parse_optional_int, parse_optional_int_option};
+use reisplanner_gtfs::errors::{DownloadError, FieldParseError, GtfsError, ParseError};
+use reisplanner_gtfs::gtfs::get_contact_info;
+use reisplanner_gtfs::gtfs::types::{LastUpdated, StopTime, Trip};
+use reisplanner_gtfs::gtfs_realtime::gtfs_realtime::{FeedEntity, FeedMessage};
+use reisplanner_gtfs::gtfs_realtime::gtfs_realtime::feed_header::Incrementality::FULL_DATASET;
+use reisplanner_gtfs::utils::{parse_int, parse_optional_int, parse_optional_int_option};
 
 async fn download_gtfs_realtime(url: &String, file_path: &String, last_updated: Option<SystemTime>) -> Result<(), DownloadError> {
     trace!("Downloading realtime GTFS data {url} to {file_path}");
@@ -78,7 +78,7 @@ async fn parse_gtfs_realtime(file_path: &String, db: &dyn Executor) -> Result<()
 async fn parse_gtfs_realtime_entry(entry: &FeedEntity, db: &dyn Executor) -> Result<(), GtfsError> {
     if let Some(trip_update) = entry.trip_update.as_ref() {
         let trip_id = parse_optional_int(trip_update.trip.trip_id.as_ref(), "trip_id");
-        
+
         if let Err(FieldParseError::Conversion(_,_,_)) = trip_id {
             // TODO implement trip_id strings
             warn!("Failed to parse {:?}", trip_update.trip.trip_id);
@@ -166,6 +166,6 @@ pub async fn run_gtfs_realtime(db: &RBatis) -> Result<(), GtfsError> {
     set_last_updated(db).await?;
 
     debug!("Realtime update finished");
-    
+
     Ok(())
 }

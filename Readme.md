@@ -26,6 +26,7 @@ Currently just loads GTFS data into a SQLite database.
 ### reisplanner-gtfs
 Downloads the static and realtime GTFS information from ovapi and parses it
 into the sqlite database.  
+This also contains the type definitions for the GTFS objects.
 
 The programs downloads the data initially, then updates the realtime data
 every minute and static data every day after 3:00 UTC.

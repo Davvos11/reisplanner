@@ -2,7 +2,7 @@ use rbatis::RBatis;
 use rbatis::table_sync::SqliteTableMapper;
 use serde::Serialize;
 use tracing::{instrument, trace};
-use crate::gtfs::types::{Agency, CalendarDate, FeedInfo, LastUpdated, Route, Shape, Stop, StopTime, Transfer, Trip};
+use reisplanner_gtfs::gtfs::types::{Agency, CalendarDate, FeedInfo, LastUpdated, Route, Shape, Stop, StopTime, Transfer, Trip};
 
 #[instrument]
 pub async fn init_db() -> anyhow::Result<RBatis> {
