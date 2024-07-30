@@ -20,3 +20,19 @@ Currently just loads GTFS data into a SQLite database.
  - [ ] Journey planning algorithm
  - [ ] Display algorithm results
  - [ ] Display vehicle information
+
+## Project structure
+
+### reisplanner-gtfs
+Downloads the static and realtime GTFS information from ovapi and parses it
+into the sqlite database.  
+
+The programs downloads the data initially, then updates the realtime data
+every minute and static data every day after 3:00 UTC.
+
+I would not recommend running without `--release` since parsing the static GTFS
+data takes a very long time otherwise.
+
+```shell
+cargo run -p reisplanner-gtfs --release
+```

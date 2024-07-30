@@ -1,5 +1,5 @@
 [package]
-name = "reisplanner"
+name = "reisplanner-gtfs"
 version = "0.1.0"
 edition = "2021"
 authors = ["vosdavid2@gmail.com"]
