@@ -5,13 +5,34 @@ use std::str::FromStr;
 
 use chrono::{Datelike, NaiveDate};
 use rbatis::rbdc;
-use serde::{de, Deserialize, Deserializer};
+use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 use serde::de::{SeqAccess, Visitor};
 
 use crate::errors::FieldParseError;
 
-pub type TimeTuple = (u8, u8, u8);
+#[derive(Deserialize, Debug, Copy, Clone, Default)]
+pub struct TimeTuple (u8, u8, u8);
 
+impl Serialize for TimeTuple {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where S: Serializer
+    {
+        let tuple: (u8, u8, u8) = (*self).into();
+        tuple.serialize(serializer)
+    }
+}
+
+impl From<TimeTuple> for u32{
+    fn from(value: TimeTuple) -> Self {
+        value.0 as u32 * 60 * 60 + value.1 as u32 * 60 + value.0 as u32 * 60
+    }
+}
+
+impl From<TimeTuple> for (u8, u8, u8) {
+    fn from(value: TimeTuple) -> Self {
+        (value.0, value.1, value.2)
+    }
+}
 
 pub fn deserialize_time_tuple<'de, D>(deserializer: D) -> Result<TimeTuple, D::Error>
 where
@@ -37,7 +58,7 @@ where
             let hours = parts[0].parse::<u8>().map_err(de::Error::custom)?;
             let minutes = parts[1].parse::<u8>().map_err(de::Error::custom)?;
             let seconds = parts[2].parse::<u8>().map_err(de::Error::custom)?;
-            Ok((hours, minutes, seconds))
+            Ok(TimeTuple(hours, minutes, seconds))
         }
 
         fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
@@ -47,7 +68,7 @@ where
             let hours = seq.next_element::<u8>()?.ok_or_else(|| de::Error::invalid_length(0, &self))?;
             let minutes = seq.next_element::<u8>()?.ok_or_else(|| de::Error::invalid_length(1, &self))?;
             let seconds = seq.next_element::<u8>()?.ok_or_else(|| de::Error::invalid_length(2, &self))?;
-            Ok((hours, minutes, seconds))
+            Ok(TimeTuple(hours, minutes, seconds))
         }
 
         fn visit_map<M>(self, map: M) -> Result<Self::Value, M::Error>

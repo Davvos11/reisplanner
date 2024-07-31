@@ -112,8 +112,7 @@ async fn parse_gtfs_realtime_entry(entry: &FeedEntity, db: &dyn Executor) -> Res
 
             // TODO use certainty and/or schedule relationship
             if let Some(db_stop_time) = result.first_mut() {
-                let stop_id = parse_int(&db_stop_time.stop_id, "stop_id")
-                    .map_err(|e| ParseError::Database(e, Box::new(db_stop_time.clone())))?;
+                let stop_id = db_stop_time.stop_id;
                 // TODO maybe also set if None?
                 if let delay @ Some(_) = update.arrival.delay {
                     db_stop_time.arrival_delay = delay;

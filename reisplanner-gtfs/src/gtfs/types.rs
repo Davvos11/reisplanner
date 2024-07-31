@@ -72,15 +72,15 @@ enum RouteType {
 // Struct for routes.txt
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Route {
-    route_id: u32,
-    agency_id: String,
-    route_short_name: String,
-    route_long_name: String,
-    route_desc: Option<String>,
-    route_type: RouteType,
-    route_color: Option<String>,
-    route_text_color: Option<String>,
-    route_url: Option<String>,
+    pub route_id: u32,
+    pub agency_id: String,
+    pub route_short_name: String,
+    pub route_long_name: String,
+    pub route_desc: Option<String>,
+    pub route_type: RouteType,
+    pub route_color: Option<String>,
+    pub route_text_color: Option<String>,
+    pub route_url: Option<String>,
 }
 
 impl Default for Route {
@@ -100,6 +100,9 @@ impl Default for Route {
 }
 
 crud_trait!(Route {});
+impl_select!(Route {
+    select_by_id(route_id:&u32) -> Option => "`where route_id = #{route_id}"
+});
 
 // Struct for shapes.txt
 #[derive(Debug, Deserialize, Serialize)]
@@ -150,17 +153,17 @@ enum WheelchairBoarding {
 // Struct for stops.txt
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Stop {
-    stop_id: String,
-    stop_code: Option<String>,
-    stop_name: String,
-    stop_lat: f64,
-    stop_lon: f64,
-    location_type: LocationType,
-    parent_station: Option<String>,
-    stop_timezone: Option<String>,
-    wheelchair_boarding: Option<WheelchairBoarding>,
-    platform_code: Option<String>,
-    zone_id: Option<String>,
+    pub stop_id: String,
+    pub stop_code: Option<String>,
+    pub stop_name: String,
+    pub stop_lat: f64,
+    pub stop_lon: f64,
+    pub location_type: LocationType,
+    pub parent_station: Option<String>,
+    pub stop_timezone: Option<String>,
+    pub wheelchair_boarding: Option<WheelchairBoarding>,
+    pub platform_code: Option<String>,
+    pub zone_id: Option<String>,
 }
 
 impl Default for Stop {
@@ -182,6 +185,9 @@ impl Default for Stop {
 }
 
 crud_trait!(Stop {});
+impl_select!(Stop {
+    select_by_id(stop_id:&u32) -> Option => "`where stop_id = #{stop_id}`"
+});
 
 
 #[derive(Deserialize_repr, Serialize_repr, Default, PartialEq, Debug, Clone)]
@@ -202,8 +208,7 @@ pub enum PickupType {
 pub struct StopTime {
     pub trip_id: u32,
     pub stop_sequence: u32,
-    // TODO u32 instead of string?
-    pub stop_id: String,
+    pub stop_id: u32,
     pub stop_headsign: Option<String>,
     #[serde(deserialize_with = "deserialize_time_tuple")]
     pub arrival_time: TimeTuple,
@@ -244,6 +249,9 @@ impl Default for StopTime {
 crud_trait!(StopTime {});
 impl_select!(StopTime {
     select_by_id_and_trip(stop_id:&u32,trip_id:&u32) => "`where stop_id = #{stop_id} and trip_id = #{trip_id}`"
+});
+impl_select!(StopTime {
+    select_by_trip_id(trip_id:&u32) => "`where trip_id = #{trip_id}`"
 });
 impl_select!(StopTime {
     select_by_sequence_and_trip(stop_sequence:&u32,trip_id:&u32) => "`where stop_sequence = #{stop_sequence} and trip_id = #{trip_id}`"
@@ -308,18 +316,18 @@ enum AllowedType {
 // Struct for trips.txt
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Trip {
-    route_id: u32,
-    service_id: u32,
-    trip_id: u32,
-    realtime_trip_id: String,
-    trip_headsign: String,
-    trip_short_name: Option<String>,
-    trip_long_name: Option<String>,
-    direction_id: i32,
-    block_id: Option<String>,
-    shape_id: Option<u32>,
-    wheelchair_accessible: Option<AllowedType>,
-    bikes_allowed: Option<AllowedType>,
+    pub route_id: u32,
+    pub service_id: u32,
+    pub trip_id: u32,
+    pub realtime_trip_id: String,
+    pub trip_headsign: String,
+    pub trip_short_name: Option<String>,
+    pub trip_long_name: Option<String>,
+    pub direction_id: i32,
+    pub block_id: Option<String>,
+    pub shape_id: Option<u32>,
+    pub wheelchair_accessible: Option<AllowedType>,
+    pub bikes_allowed: Option<AllowedType>,
     // Fields added by realtime updates:
     #[serde(default)]
     pub delay: Option<i32>,

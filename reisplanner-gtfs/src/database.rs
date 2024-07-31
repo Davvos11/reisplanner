@@ -25,7 +25,10 @@ pub async fn init_db() -> anyhow::Result<RBatis> {
     add_index(&rb, "trip", &["trip_id"]).await?;
     add_index(&rb, "stop_time", &["stop_id", "trip_id"]).await?;
     add_index(&rb, "stop_time", &["stop_sequence", "trip_id"]).await?;
-
+    add_index(&rb, "route", &["route_id"]).await?;
+    add_index(&rb, "stop_time", &["trip_id"]).await?;
+    add_index(&rb, "stop", &["stop_id"]).await?;
+    
     Ok(rb)
 }
 
@@ -55,7 +58,7 @@ where
 }
 
 async fn add_index(rb: &RBatis, table: &str, columns: &[&str]) -> anyhow::Result<()> {
-    let name = columns.join("_") + "_idx";
+    let name = columns.join("_") + "_idx_" + table;
     rb.query(
         format!("CREATE INDEX IF NOT EXISTS {name} ON {table} ({});",
                 columns.join(", ")).as_str(),
