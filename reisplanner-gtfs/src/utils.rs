@@ -11,7 +11,7 @@ use serde::de::{SeqAccess, Visitor};
 use crate::errors::FieldParseError;
 
 #[derive(Deserialize, Debug, Copy, Clone, Default)]
-pub struct TimeTuple (u8, u8, u8);
+pub struct TimeTuple (pub u8, pub u8, pub u8);
 
 impl Serialize for TimeTuple {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -24,7 +24,7 @@ impl Serialize for TimeTuple {
 
 impl From<TimeTuple> for u32{
     fn from(value: TimeTuple) -> Self {
-        value.0 as u32 * 60 * 60 + value.1 as u32 * 60 + value.0 as u32 * 60
+        value.0 as u32 * 60 * 60 + value.1 as u32 * 60 + value.2 as u32 
     }
 }
 

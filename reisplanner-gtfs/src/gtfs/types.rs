@@ -186,9 +186,12 @@ impl Default for Stop {
 
 crud_trait!(Stop {});
 impl_select!(Stop {
-    select_by_id(stop_id:&u32) -> Option => "`where stop_id = #{stop_id}`"
+    select_by_id(stop_id: &u32) -> Option => "`where stop_id = #{stop_id}`"
 });
 
+impl_select!(Stop {
+    select_by_id_str(stop_id: &String) -> Option => "`where stop_id = #{stop_id}`"
+});
 
 #[derive(Deserialize_repr, Serialize_repr, Default, PartialEq, Debug, Clone)]
 #[repr(u8)]
@@ -251,7 +254,7 @@ impl_select!(StopTime {
     select_by_id_and_trip(stop_id:&u32,trip_id:&u32) => "`where stop_id = #{stop_id} and trip_id = #{trip_id}`"
 });
 impl_select!(StopTime {
-    select_by_trip_id(trip_id:&u32) => "`where trip_id = #{trip_id}`"
+    select_by_trip_id(trip_id:&u32) => "`where trip_id = #{trip_id} order by stop_sequence`"
 });
 impl_select!(StopTime {
     select_by_sequence_and_trip(stop_sequence:&u32,trip_id:&u32) => "`where stop_sequence = #{stop_sequence} and trip_id = #{trip_id}`"

@@ -10,12 +10,13 @@ use rbatis::executor::Executor;
 use reqwest::Client;
 use reqwest::header::{IF_MODIFIED_SINCE, LAST_MODIFIED, USER_AGENT};
 use tracing::{debug, instrument, trace, warn};
+
 use reisplanner_gtfs::errors::{DownloadError, FieldParseError, GtfsError, ParseError};
 use reisplanner_gtfs::gtfs::get_contact_info;
 use reisplanner_gtfs::gtfs::types::{LastUpdated, StopTime, Trip};
 use reisplanner_gtfs::gtfs_realtime::gtfs_realtime::{FeedEntity, FeedMessage};
 use reisplanner_gtfs::gtfs_realtime::gtfs_realtime::feed_header::Incrementality::FULL_DATASET;
-use reisplanner_gtfs::utils::{parse_int, parse_optional_int, parse_optional_int_option};
+use reisplanner_gtfs::utils::{parse_optional_int, parse_optional_int_option};
 
 async fn download_gtfs_realtime(url: &String, file_path: &String, last_updated: Option<SystemTime>) -> Result<(), DownloadError> {
     trace!("Downloading realtime GTFS data {url} to {file_path}");
