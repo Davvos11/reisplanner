@@ -260,6 +260,7 @@ impl_select!(StopTime {
 impl_select_page!(StopTime {
    select_all_grouped_paged() => "`order by trip_id, stop_sequence`"
 });
+// TODO this does not work:
 impl_select_page!(StopTime {
    select_all_grouped_paged_trip_id_gte(trip_id: &u32) => "`where trip_id >= #{trip_id} order by trip_id, stop_sequence`"
 });
@@ -376,6 +377,9 @@ impl Default for Trip {
     }
 }
 crud_trait!(Trip {});
+impl_select!(Trip {
+    select_by_id(trip_id:&u32) -> Option => "`where trip_id = #{trip_id}"
+});
 
 #[derive(Default, Debug, Deserialize, Serialize)]
 pub struct LastUpdated {

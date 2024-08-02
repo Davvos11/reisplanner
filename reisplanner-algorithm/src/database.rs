@@ -1,5 +1,7 @@
 use rbatis::RBatis;
 
+pub mod queries;
+
 /// Get database connection.
 pub fn new_db_connection() -> anyhow::Result<RBatis> {
     let rb = RBatis::new();
