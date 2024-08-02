@@ -34,6 +34,15 @@ impl From<TimeTuple> for (u8, u8, u8) {
     }
 }
 
+impl From<u32> for TimeTuple {
+    fn from(value: u32) -> Self {
+        let hours = value / 3600;
+        let minutes = (value % 3600) / 60;
+        let seconds = value % 60;
+        TimeTuple(hours as u8, minutes as u8, seconds as u8)
+    }
+}
+
 pub fn deserialize_time_tuple<'de, D>(deserializer: D) -> Result<TimeTuple, D::Error>
 where
     D: Deserializer<'de>,

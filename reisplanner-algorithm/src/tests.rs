@@ -1,3 +1,4 @@
+use tracing_subscriber::EnvFilter;
 use reisplanner_gtfs::utils::TimeTuple;
 
 use crate::algorithms::csa::{get_timetable, print_result, run_csa};
@@ -6,8 +7,12 @@ use crate::getters::get_stop_str;
 
 #[tokio::test]
 async fn csa_algorithm() -> anyhow::Result<()>{
+    let log_level = EnvFilter::try_from_default_env()
+        .unwrap_or(EnvFilter::new("error,reisplanner=debug"));
+    tracing_subscriber::fmt().with_env_filter(log_level).init();
+    
     let db = &new_db_connection()?;
-    let timetable = get_timetable(db, true).await?;
+    let timetable = get_timetable(db, false).await?;
 
     let cases = [
         ("stoparea:18124".to_string(), "stoparea:18305".to_string(), TimeTuple(10, 00, 00)),

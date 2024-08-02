@@ -1,23 +1,42 @@
-use std::collections::HashMap;
-
+use std::cmp::Ordering;
+use std::collections::{BTreeSet, HashMap};
+use std::process::exit;
 use indicatif::ProgressBar;
 use rbatis::executor::Executor;
 use serde::{Deserialize, Serialize};
 use tokio::time::Instant;
 
-use reisplanner_gtfs::gtfs::types::{Route, StopTime, Trip};
-
-use crate::benchmark;
-use crate::getters::{get_parent_station, get_stop_str};
+use reisplanner_gtfs::gtfs::types::{Route, Stop, StopTime, Trip};
+use reisplanner_gtfs::utils::TimeTuple;
+use crate::{benchmark, vec_to_hashmap, vec_to_hashmap_list};
+use crate::getters::{get_parent_station_map, get_route, get_stop_str};
 use crate::utils::{deserialize_from_disk, seconds_to_hms, serialize_to_disk};
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, Eq, PartialEq)]
 pub struct Connection {
     departure_station: String,
     arrival_station: String,
     departure_timestamp: u32,
     arrival_timestamp: u32,
     route_description: String,
+    pub trip_id: u32,
+}
+
+
+impl Ord for Connection {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.departure_timestamp.cmp(&other.departure_timestamp)
+            .then_with(|| self.trip_id.cmp(&other.trip_id))
+            .then_with(|| self.arrival_timestamp.cmp(&other.arrival_timestamp))
+            .then_with(|| self.departure_station.cmp(&other.departure_station))
+            .then_with(|| self.arrival_station.cmp(&other.arrival_station))
+            .then_with(|| self.route_description.cmp(&other.route_description))
+    }
+}
+impl PartialOrd for Connection {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
 }
 
 impl Connection {
@@ -30,65 +49,86 @@ impl Connection {
 }
 
 async fn generate_timetable(db: &impl Executor) -> anyhow::Result<Vec<Connection>> {
-    eprintln!("Getting trips...");
-    // let trips = Trip::select_all(db).await?;
-    let trips = Trip::select_by_column(db, "trip_long_name", "Intercity").await?;
-    let mut timetable = Vec::new();
+    eprintln!("Getting trips, routes and stations...");
+    let mut t = Instant::now();
+    let trips = Trip::select_all(db).await?;
+    // let trips = Trip::select_by_column(db, "trip_long_name", "Intercity").await?;
+    let trips = vec_to_hashmap!(trips, trip_id);
+    benchmark!(&mut t, "Got trips");
+    let trip_ids: Vec<_> = trips.keys().collect();
+    benchmark!(&mut t, "Collected trip ids");
+    let routes = Route::select_all(db).await?;
+    let routes = vec_to_hashmap!(routes, route_id);
+    benchmark!(&mut t, "Got routes");
+    let stops = Stop::select_all(db).await?;
+    let stops = vec_to_hashmap!(stops, stop_id);
+    benchmark!(&mut t, "Got stops");
+
+    // let stop_times = StopTime::select_all_grouped_filter(db, &trip_ids).await?;
+    let stop_times = StopTime::select_all_grouped(db).await?;
+    benchmark!(&mut t, "Got stop_times");
+
+    let mut timetable = BTreeSet::new();
 
     eprintln!("Generating timetable...");
-    let bar = ProgressBar::new(trips.len() as u64);
+    let stop_connections = stop_times.windows(2);
+    let bar = ProgressBar::new(stop_connections.len() as u64);
 
-    // let mut t = Instant::now();
-
-    for trip in trips {
-        let route = Route::select_by_id(db, &trip.route_id).await?.unwrap();
-        // benchmark!(&mut t, "Get route");
-        let stops = StopTime::select_by_trip_id(db, &trip.trip_id).await?;
-        // benchmark!(&mut t, "Get stops");
-        for window in stops.windows(2) {
-            if let [dep_stop, arr_stop] = window {
-                let dep_station = get_parent_station(dep_stop.stop_id, db).await?;
-                // benchmark!(&mut t, "Get departure station");
-                let arr_station = get_parent_station(arr_stop.stop_id, db).await?;
-                // benchmark!(&mut t, "Get arrival station");
-                timetable.push(Connection {
-                    departure_station: dep_station.stop_id,
-                    arrival_station: arr_station.stop_id,
-                    departure_timestamp: dep_stop.departure_time.into(),
-                    arrival_timestamp: arr_stop.arrival_time.into(),
-                    route_description: format!("{} {} {}", route.agency_id, route.route_short_name, route.route_long_name),
-                });
-                // benchmark!(&mut t, "Create connection");
-            }
-        }
-
+    let mut i = 0;
+    for window in stop_connections {
         bar.inc(1);
+        if let [dep_stop, arr_stop] = window {
+            // Don't create a connection for stops on different trips
+            if dep_stop.trip_id != arr_stop.trip_id { continue; }
+
+            let dep_station = get_parent_station_map(dep_stop.stop_id, &stops)?;
+            let arr_station = get_parent_station_map(arr_stop.stop_id, &stops)?;
+            let route = get_route(&dep_stop.trip_id, &trips, &routes)?;
+            i += 1;
+            let connection = Connection {
+                departure_station: dep_station.stop_id,
+                arrival_station: arr_station.stop_id,
+                departure_timestamp: dep_stop.departure_time.into(),
+                arrival_timestamp: arr_stop.arrival_time.into(),
+                trip_id: dep_stop.trip_id,
+                route_description: format!("{} {} {}", route.agency_id, route.route_short_name, route.route_long_name),
+            };
+            timetable.insert(connection.clone());
+        }
     }
 
     bar.finish();
+    benchmark!(&mut t, "Generated connections");
 
+    let timetable: Vec<_> = timetable.into_iter().collect();
+    println!("{}", stop_times.len());
+    println!("{}", timetable.len());
+    println!("{i}");
+    // dbg!(&timetable);
     Ok(timetable)
 }
 
-
-fn csa_main_loop(timetable: &[Connection], arrival_station: String, earliest_arrival: &mut HashMap<String, u32>, in_connection: &mut HashMap<String, usize>) {
+fn csa_main_loop(
+    timetable: &[Connection],
+    arrival_station: String,
+    earliest_arrival: &mut HashMap<String, u32>,
+    in_connection: &mut HashMap<String, usize>,
+) {
     let mut earliest = u32::MAX;
 
     for (i, connection) in timetable.iter().enumerate() {
-        if connection.departure_timestamp >= *earliest_arrival.get(&connection.departure_station).unwrap_or(&u32::MAX) &&
-            connection.arrival_timestamp < *earliest_arrival.get(&connection.arrival_station).unwrap_or(&u32::MAX) {
+        if connection.departure_timestamp >= *earliest_arrival.get(&connection.departure_station).unwrap_or(&u32::MAX)
+            && connection.arrival_timestamp < *earliest_arrival.get(&connection.arrival_station).unwrap_or(&u32::MAX)
+        {
             earliest_arrival.insert(connection.arrival_station.clone(), connection.arrival_timestamp);
             in_connection.insert(connection.arrival_station.clone(), i);
 
-            if connection.arrival_station == arrival_station &&
-                connection.arrival_timestamp < earliest {
+            if connection.arrival_station == arrival_station && connection.arrival_timestamp < earliest {
                 earliest = connection.arrival_timestamp;
             }
+        } else if connection.arrival_timestamp > earliest {
+            break;
         }
-        // Don't break when later, our timetable is not sorted
-        //     else if connection.arrival_timestamp > earliest {
-        //         break;
-        //     }
     }
 }
 
@@ -100,7 +140,7 @@ pub async fn get_timetable(db: &impl Executor, cache: bool) -> anyhow::Result<Ve
     } else {
         // Get timetable from disk or generate
         match deserialize_from_disk(TIMETABLE) {
-            Ok(timetable) => { Ok(timetable) }
+            Ok(timetable) => Ok(timetable),
             Err(_) => {
                 let timetable = generate_timetable(db).await?;
                 serialize_to_disk(&timetable, TIMETABLE)?;
@@ -115,8 +155,7 @@ pub async fn run_csa(
     arrival: &String,
     departure_time: impl Into<u32>,
     timetable: &[Connection],
-) -> anyhow::Result<Option<Vec<Connection>>>
-{
+) -> anyhow::Result<Option<Vec<Connection>>> {
     let mut in_connection = HashMap::with_capacity(1000);
     let mut earliest_arrival = HashMap::with_capacity(1000);
 
@@ -137,7 +176,7 @@ pub async fn run_csa(
             route.push(connection);
             last_connection_idx = in_connection.get(&connection.departure_station);
         }
-        
+
         let route = route.into_iter().cloned().rev().collect();
         Ok(Some(route))
     }
@@ -145,14 +184,16 @@ pub async fn run_csa(
 
 pub async fn print_result(result: &[Connection], db: &impl Executor) -> anyhow::Result<()> {
     for connection in result {
-        println!("{} @ {} - {} @ {} using {}",
-                 connection.departure_name(db).await?,
-                 seconds_to_hms(connection.departure_timestamp),
-                 connection.arrival_name(db).await?,
-                 seconds_to_hms(connection.arrival_timestamp),
-                 connection.route_description
+        println!(
+            "{} @ {} - {} @ {} using {}",
+            connection.departure_name(db).await?,
+            seconds_to_hms(connection.departure_timestamp),
+            connection.arrival_name(db).await?,
+            seconds_to_hms(connection.arrival_timestamp),
+            connection.route_description
         )
     }
 
     Ok(())
 }
+

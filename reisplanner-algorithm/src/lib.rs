@@ -4,7 +4,6 @@ mod tests;
 mod database;
 mod utils;
 mod getters;
-#[allow(dead_code)]
-mod algorithms;
+pub mod algorithms;
 
 // TODO remove allow(dead_code)

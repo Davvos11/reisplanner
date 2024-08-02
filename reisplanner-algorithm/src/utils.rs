@@ -37,3 +37,33 @@ pub fn seconds_to_hms(seconds: u32) -> String {
     let seconds = seconds % 60;
     format!("{:02}:{:02}:{:02}", hours, minutes, seconds)
 }
+
+#[macro_export]
+macro_rules! vec_to_hashmap {
+    ($vec_ref:expr,$($field_name:ident$(.)?)+) => {{
+        let vec = $vec_ref;
+        let mut ids = std::collections::HashMap::with_capacity(vec.len());
+        for item in vec {
+            let item_c = item.clone();
+            let v = item $(.$field_name)+;
+            ids.insert(v.clone(), item_c);
+        }
+        ids
+    }};
+}
+
+#[macro_export]
+macro_rules! vec_to_hashmap_list {
+    ($vec_ref:expr,$($field_name:ident$(.)?)+) => {{
+        let vec = $vec_ref;
+        let mut ids = std::collections::HashMap::with_capacity(vec.len());
+        for item in vec {
+            let item_c = item.clone();
+            let v = item $(.$field_name)+;
+            ids.entry(v.clone()).or_insert(Vec::new())
+                .push(item_c);
+        }
+        ids
+    }};
+}
+

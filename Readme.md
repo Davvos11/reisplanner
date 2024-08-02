@@ -49,5 +49,5 @@ Contains the journey planning algorithms.
 Currently only contains a very naive CSA implementation.
 
 ```shell
-cargo test -p reisplanner-algorithm --release
+cargo test -p reisplanner-algorithm --release -- --nocapture 
 ```

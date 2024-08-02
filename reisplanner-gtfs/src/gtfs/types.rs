@@ -1,5 +1,7 @@
+use std::cmp::Ordering;
+use std::collections::BTreeSet;
 use rbatis::executor::Executor;
-use rbatis::{impl_select, impl_update, rbdc};
+use rbatis::{impl_select, impl_select_page, impl_update, rbdc};
 use rbatis::rbdc::{Date, Error};
 use rbatis::rbdc::db::ExecResult;
 use serde::{Deserialize, Serialize};
@@ -8,6 +10,8 @@ use serde_repr::{Deserialize_repr, Serialize_repr};
 use crate::crud_trait;
 use crate::rbatis_wrapper::DatabaseModel;
 use crate::utils::{deserialize_date, deserialize_time_tuple, TimeTuple};
+
+// TODO make everything pub
 
 // Struct for agency.txt
 #[derive(Debug, Deserialize, Serialize, Default)]
@@ -53,7 +57,7 @@ pub struct FeedInfo {
 }
 crud_trait!(FeedInfo {});
 
-#[derive(Deserialize_repr, Serialize_repr, PartialEq, Debug, Default)]
+#[derive(Deserialize_repr, Serialize_repr, PartialEq, Debug, Default, Clone)]
 #[repr(u8)]
 enum RouteType {
     #[default]
@@ -70,7 +74,7 @@ enum RouteType {
 }
 
 // Struct for routes.txt
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Route {
     pub route_id: u32,
     pub agency_id: String,
@@ -129,7 +133,7 @@ impl Default for Shape {
 crud_trait!(Shape {});
 
 
-#[derive(Deserialize_repr, Serialize_repr, Default, PartialEq, Debug)]
+#[derive(Deserialize_repr, Serialize_repr, Default, PartialEq, Debug, Clone)]
 #[repr(u8)]
 enum LocationType {
     #[default]
@@ -141,7 +145,7 @@ enum LocationType {
 }
 
 
-#[derive(Deserialize_repr, Serialize_repr, Default, PartialEq, Debug)]
+#[derive(Deserialize_repr, Serialize_repr, Default, PartialEq, Debug, Clone)]
 #[repr(u8)]
 enum WheelchairBoarding {
     #[default]
@@ -151,7 +155,7 @@ enum WheelchairBoarding {
 }
 
 // Struct for stops.txt
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Stop {
     pub stop_id: String,
     pub stop_code: Option<String>,
@@ -251,6 +255,19 @@ impl Default for StopTime {
 
 crud_trait!(StopTime {});
 impl_select!(StopTime {
+   select_all_grouped() => "`order by trip_id, stop_sequence`"
+});
+impl_select_page!(StopTime {
+   select_all_grouped_paged() => "`order by trip_id, stop_sequence`"
+});
+impl_select!(StopTime {
+   select_all_grouped_filter(trip_ids: &[&u32])  =>
+    "` where trip_id in (`
+          trim ',': for _,item in trip_ids:
+             #{item},
+      `) order by trip_id, stop_sequence`"
+});
+impl_select!(StopTime {
     select_by_id_and_trip(stop_id:&u32,trip_id:&u32) => "`where stop_id = #{stop_id} and trip_id = #{trip_id}`"
 });
 impl_select!(StopTime {
@@ -306,7 +323,7 @@ impl Default for Transfer {
 
 crud_trait!(Transfer {});
 
-#[derive(Deserialize_repr, Serialize_repr, Default, PartialEq, Debug)]
+#[derive(Deserialize_repr, Serialize_repr, Default, PartialEq, Debug, Clone)]
 #[repr(u8)]
 enum AllowedType {
     #[default]
@@ -317,7 +334,7 @@ enum AllowedType {
 
 
 // Struct for trips.txt
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Trip {
     pub route_id: u32,
     pub service_id: u32,
