@@ -1,8 +1,10 @@
 use std::cmp::Ordering;
 use std::collections::{BTreeSet, HashMap};
+use std::iter;
 use std::process::exit;
 use indicatif::ProgressBar;
 use rbatis::executor::Executor;
+use rbatis::PageRequest;
 use serde::{Deserialize, Serialize};
 use tokio::time::Instant;
 
@@ -19,14 +21,12 @@ pub struct Connection {
     departure_timestamp: u32,
     arrival_timestamp: u32,
     route_description: String,
-    pub trip_id: u32,
 }
 
 
 impl Ord for Connection {
     fn cmp(&self, other: &Self) -> Ordering {
         self.departure_timestamp.cmp(&other.departure_timestamp)
-            .then_with(|| self.trip_id.cmp(&other.trip_id))
             .then_with(|| self.arrival_timestamp.cmp(&other.arrival_timestamp))
             .then_with(|| self.departure_station.cmp(&other.departure_station))
             .then_with(|| self.arrival_station.cmp(&other.arrival_station))
@@ -48,6 +48,8 @@ impl Connection {
     }
 }
 
+const PAGE_SIZE: u64 = 100000;
+
 async fn generate_timetable(db: &impl Executor) -> anyhow::Result<Vec<Connection>> {
     eprintln!("Getting trips, routes and stations...");
     let mut t = Instant::now();
@@ -55,8 +57,8 @@ async fn generate_timetable(db: &impl Executor) -> anyhow::Result<Vec<Connection
     // let trips = Trip::select_by_column(db, "trip_long_name", "Intercity").await?;
     let trips = vec_to_hashmap!(trips, trip_id);
     benchmark!(&mut t, "Got trips");
-    let trip_ids: Vec<_> = trips.keys().collect();
-    benchmark!(&mut t, "Collected trip ids");
+    // let trip_ids: Vec<_> = trips.keys().collect();
+    // benchmark!(&mut t, "Collected trip ids");
     let routes = Route::select_all(db).await?;
     let routes = vec_to_hashmap!(routes, route_id);
     benchmark!(&mut t, "Got routes");
@@ -64,46 +66,62 @@ async fn generate_timetable(db: &impl Executor) -> anyhow::Result<Vec<Connection
     let stops = vec_to_hashmap!(stops, stop_id);
     benchmark!(&mut t, "Got stops");
 
-    // let stop_times = StopTime::select_all_grouped_filter(db, &trip_ids).await?;
-    let stop_times = StopTime::select_all_grouped(db).await?;
-    benchmark!(&mut t, "Got stop_times");
-
     let mut timetable = BTreeSet::new();
 
-    eprintln!("Generating timetable...");
-    let stop_connections = stop_times.windows(2);
-    let bar = ProgressBar::new(stop_connections.len() as u64);
+    let mut page_request = PageRequest::new(1, PAGE_SIZE);
+    page_request = page_request.set_do_count(false);
+    let mut stop_time_cache: Option<StopTime> = None;
+    let mut highest_trip_id = 0;
+    loop {
+        let page = StopTime::select_all_grouped_paged_trip_id_gte(db, &page_request, &highest_trip_id).await?;
+        benchmark!(&mut t, "Got stop_times");
 
-    let mut i = 0;
-    for window in stop_connections {
-        bar.inc(1);
-        if let [dep_stop, arr_stop] = window {
-            // Don't create a connection for stops on different trips
-            if dep_stop.trip_id != arr_stop.trip_id { continue; }
-
-            let dep_station = get_parent_station_map(dep_stop.stop_id, &stops)?;
-            let arr_station = get_parent_station_map(arr_stop.stop_id, &stops)?;
-            let route = get_route(&dep_stop.trip_id, &trips, &routes)?;
-            i += 1;
-            let connection = Connection {
-                departure_station: dep_station.stop_id,
-                arrival_station: arr_station.stop_id,
-                departure_timestamp: dep_stop.departure_time.into(),
-                arrival_timestamp: arr_stop.arrival_time.into(),
-                trip_id: dep_stop.trip_id,
-                route_description: format!("{} {} {}", route.agency_id, route.route_short_name, route.route_long_name),
+        let stop_times = page.records;
+        let count = stop_times.len();
+        let stop_times: Vec<_>=
+            if let Some(stop_time) = stop_time_cache {
+                iter::once(stop_time).chain(stop_times.into_iter()).collect()
+            } else {
+                stop_times.into_iter().collect()
             };
-            timetable.insert(connection.clone());
+        benchmark!(&mut t, "Did iterator shenanigans");
+
+        let stop_connections = stop_times.windows(2);
+        // let bar = ProgressBar::new(stop_connections.len() as u64);
+
+        for window in stop_connections {
+            // bar.inc(1);
+            if let [dep_stop, arr_stop] = window {
+                // Don't create a connection for stops on different trips
+                if dep_stop.trip_id != arr_stop.trip_id { continue; }
+
+                let dep_station = get_parent_station_map(dep_stop.stop_id, &stops)?;
+                let arr_station = get_parent_station_map(arr_stop.stop_id, &stops)?;
+                let route = get_route(&dep_stop.trip_id, &trips, &routes)?;
+                let connection = Connection {
+                    departure_station: dep_station.stop_id,
+                    arrival_station: arr_station.stop_id,
+                    departure_timestamp: dep_stop.departure_time.into(),
+                    arrival_timestamp: arr_stop.arrival_time.into(),
+                    route_description: format!("{} {} {}", route.agency_id, route.route_short_name, route.route_long_name),
+                };
+                timetable.insert(connection.clone());
+            }
+        }
+
+        // bar.finish();
+        benchmark!(&mut t, "Generated connections");
+
+        if count != PAGE_SIZE as usize {
+            break;
+        } else {
+            page_request.page_no += 1;
+            stop_time_cache = stop_times.last().cloned();
+            highest_trip_id = stop_times.last().unwrap().trip_id;
         }
     }
 
-    bar.finish();
-    benchmark!(&mut t, "Generated connections");
-
     let timetable: Vec<_> = timetable.into_iter().collect();
-    println!("{}", stop_times.len());
-    println!("{}", timetable.len());
-    println!("{i}");
     // dbg!(&timetable);
     Ok(timetable)
 }

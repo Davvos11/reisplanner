@@ -8,7 +8,7 @@ use crate::getters::get_stop_str;
 #[tokio::test]
 async fn csa_algorithm() -> anyhow::Result<()>{
     let log_level = EnvFilter::try_from_default_env()
-        .unwrap_or(EnvFilter::new("error,reisplanner=debug"));
+        .unwrap_or(EnvFilter::new("error,reisplanner=debug,rbatis=debug"));
     tracing_subscriber::fmt().with_env_filter(log_level).init();
     
     let db = &new_db_connection()?;

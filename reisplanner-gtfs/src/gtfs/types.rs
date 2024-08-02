@@ -260,6 +260,9 @@ impl_select!(StopTime {
 impl_select_page!(StopTime {
    select_all_grouped_paged() => "`order by trip_id, stop_sequence`"
 });
+impl_select_page!(StopTime {
+   select_all_grouped_paged_trip_id_gte(trip_id: &u32) => "`where trip_id >= #{trip_id} order by trip_id, stop_sequence`"
+});
 impl_select!(StopTime {
    select_all_grouped_filter(trip_ids: &[&u32])  =>
     "` where trip_id in (`
