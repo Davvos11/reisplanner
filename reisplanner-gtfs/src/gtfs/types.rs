@@ -1,7 +1,6 @@
-use std::cmp::Ordering;
-use std::collections::BTreeSet;
+use async_trait::async_trait;
+use rbatis::{impl_select, impl_update, rbdc};
 use rbatis::executor::Executor;
-use rbatis::{impl_select, impl_select_page, impl_update, rbdc};
 use rbatis::rbdc::{Date, Error};
 use rbatis::rbdc::db::ExecResult;
 use serde::{Deserialize, Serialize};
@@ -11,22 +10,20 @@ use crate::crud_trait;
 use crate::rbatis_wrapper::DatabaseModel;
 use crate::utils::{deserialize_date, deserialize_time_tuple, TimeTuple};
 
-// TODO make everything pub
-
 // Struct for agency.txt
 #[derive(Debug, Deserialize, Serialize, Default)]
 pub struct Agency {
-    agency_id: String,
-    agency_name: String,
-    agency_url: String,
-    agency_timezone: String,
-    agency_phone: String,
+    pub agency_id: String,
+    pub agency_name: String,
+    pub agency_url: String,
+    pub agency_timezone: String,
+    pub agency_phone: String,
 }
 crud_trait!(Agency {});
 
 #[derive(Deserialize_repr, Serialize_repr, PartialEq, Debug, Default)]
 #[repr(u8)]
-enum ExceptionType {
+pub enum ExceptionType {
     #[default]
     Added = 1,
     Removed = 2,
@@ -35,31 +32,31 @@ enum ExceptionType {
 // Struct for calendar_dates.txt
 #[derive(Debug, Deserialize, Serialize, Default)]
 pub struct CalendarDate {
-    service_id: u32,
+    pub service_id: u32,
     #[serde(deserialize_with = "deserialize_date")]
-    date: Date,
-    exception_type: ExceptionType,
+    pub date: Date,
+    pub exception_type: ExceptionType,
 }
 crud_trait!(CalendarDate {});
 
 // Struct for feed_info.txt
 #[derive(Debug, Deserialize, Serialize, Default)]
 pub struct FeedInfo {
-    feed_publisher_name: String,
-    feed_id: String,
-    feed_publisher_url: String,
-    feed_lang: String,
+    pub feed_publisher_name: String,
+    pub feed_id: String,
+    pub feed_publisher_url: String,
+    pub feed_lang: String,
     #[serde(deserialize_with = "deserialize_date")]
-    feed_start_date: Date,
+    pub feed_start_date: Date,
     #[serde(deserialize_with = "deserialize_date")]
-    feed_end_date: Date,
-    feed_version: String,
+    pub feed_end_date: Date,
+    pub feed_version: String,
 }
 crud_trait!(FeedInfo {});
 
 #[derive(Deserialize_repr, Serialize_repr, PartialEq, Debug, Default, Clone)]
 #[repr(u8)]
-enum RouteType {
+pub enum RouteType {
     #[default]
     Tram = 0,
     Metro = 1,
@@ -111,11 +108,11 @@ impl_select!(Route {
 // Struct for shapes.txt
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Shape {
-    shape_id: u32,
-    shape_pt_sequence: u32,
-    shape_pt_lat: f64,
-    shape_pt_lon: f64,
-    shape_dist_traveled: Option<f64>,
+    pub shape_id: u32,
+    pub shape_pt_sequence: u32,
+    pub shape_pt_lat: f64,
+    pub shape_pt_lon: f64,
+    pub shape_dist_traveled: Option<f64>,
 }
 
 impl Default for Shape {
@@ -135,7 +132,7 @@ crud_trait!(Shape {});
 
 #[derive(Deserialize_repr, Serialize_repr, Default, PartialEq, Debug, Clone)]
 #[repr(u8)]
-enum LocationType {
+pub enum LocationType {
     #[default]
     Stop = 0, // (Platform when defined within a parent_station)
     Station = 1,
@@ -147,7 +144,7 @@ enum LocationType {
 
 #[derive(Deserialize_repr, Serialize_repr, Default, PartialEq, Debug, Clone)]
 #[repr(u8)]
-enum WheelchairBoarding {
+pub enum WheelchairBoarding {
     #[default]
     Empty = 0,
     SomePossible = 1,
@@ -261,13 +258,6 @@ crud_trait!(StopTime {});
 impl_select!(StopTime {
    select_all_grouped() => "`order by trip_id, stop_sequence`"
 });
-impl_select_page!(StopTime {
-   select_all_grouped_paged() => "`order by trip_id, stop_sequence`"
-});
-// TODO this does not work:
-impl_select_page!(StopTime {
-   select_all_grouped_paged_trip_id_gte(trip_id: &u32) => "`where trip_id >= #{trip_id} order by trip_id, stop_sequence`"
-});
 impl_select!(StopTime {
    select_all_grouped_filter(trip_ids: &[&u32])  =>
     "` where trip_id in (`
@@ -291,7 +281,7 @@ impl_update!(StopTime {
 
 #[derive(Deserialize_repr, Serialize_repr, Default, PartialEq, Debug)]
 #[repr(u8)]
-enum TransferType {
+pub enum TransferType {
     #[default]
     Recommended = 0,
     Timed = 1, // Departing vehicle is expected to wait
@@ -304,14 +294,14 @@ enum TransferType {
 // Struct for transfers.txt
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Transfer {
-    from_stop_id: String,
-    to_stop_id: String,
-    from_route_id: Option<u32>,
-    to_route_id: Option<u32>,
-    from_trip_id: Option<u32>,
-    to_trip_id: Option<u32>,
-    transfer_type: TransferType,
-    min_transfer_time: Option<i32>,
+    pub from_stop_id: String,
+    pub to_stop_id: String,
+    pub from_route_id: Option<u32>,
+    pub to_route_id: Option<u32>,
+    pub from_trip_id: Option<u32>,
+    pub to_trip_id: Option<u32>,
+    pub transfer_type: TransferType,
+    pub min_transfer_time: Option<i32>,
 }
 
 impl Default for Transfer {
@@ -333,7 +323,7 @@ crud_trait!(Transfer {});
 
 #[derive(Deserialize_repr, Serialize_repr, Default, PartialEq, Debug, Clone)]
 #[repr(u8)]
-enum AllowedType {
+pub enum AllowedType {
     #[default]
     NoInformation = 0,
     Allowed = 1,

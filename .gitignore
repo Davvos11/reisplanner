@@ -132,3 +132,4 @@ target/
 sqlite*
 *.pb
 reisplanner-gtfs/gtfs
+/reisplanner-algorithm/timetable.blob

@@ -5,12 +5,11 @@ use indicatif::{ProgressBar, ProgressStyle};
 use rbatis::executor::Executor;
 use rbatis::RBatis;
 use serde::{Deserialize, Serialize};
-use tokio::time::Instant;
 use tracing::debug;
 use tracing::field::debug;
+
 use reisplanner_gtfs::gtfs::types::{Route, Trip};
 
-use crate::benchmark;
 use crate::database::queries::{count_stop_times, get_parent_station_map, get_stop_times};
 use crate::getters::get_stop;
 use crate::utils::{deserialize_from_disk, seconds_to_hms, serialize_to_disk};
@@ -144,8 +143,8 @@ fn csa_main_loop(
         if connection.departure_timestamp >= *earliest_arrival.get(&connection.departure_station).unwrap_or(&u32::MAX)
             && connection.arrival_timestamp < *earliest_arrival.get(&connection.arrival_station).unwrap_or(&u32::MAX)
         {
-            earliest_arrival.insert(connection.arrival_station.clone(), connection.arrival_timestamp);
-            in_connection.insert(connection.arrival_station.clone(), i);
+            earliest_arrival.insert(connection.arrival_station, connection.arrival_timestamp);
+            in_connection.insert(connection.arrival_station, i);
 
             if connection.arrival_station == arrival_station && connection.arrival_timestamp < earliest {
                 earliest = connection.arrival_timestamp;

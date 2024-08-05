@@ -137,7 +137,7 @@ where
     deserializer.deserialize_any(DateVisitor)
 }
 
-pub fn parse_int<F>(item: &String, name: &'static str) -> Result<F, FieldParseError>
+pub fn parse_int<F>(item: &str, name: &'static str) -> Result<F, FieldParseError>
 where
     F: FromStr<Err=ParseIntError>,
 {

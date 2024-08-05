@@ -24,6 +24,7 @@ thiserror = "1.0.61"
 anyhow = "1.0.86"
 tracing = "0.1.40"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
+async-trait = "0.1.81"
 
 [build-dependencies]
 protobuf-codegen = "3.4.0"

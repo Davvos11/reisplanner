@@ -90,7 +90,7 @@ message FeedEntity {
   // present (unless the entity is being deleted).
   optional TripUpdate trip_update = 3;
   optional VehiclePosition vehicle = 4;
-  optional Alert alert = 5;
+  optional Alert _alert = 5;
 
   // The extensions namespace allows 3rd-party developers to extend the
   // GTFS-realtime specification in order to add and evaluate new features and
@@ -366,17 +366,17 @@ message VehiclePosition {
   extensions 1000 to 1999;
 }
 
-// An alert, indicating some sort of incident in the public transit network.
+// An _alert, indicating some sort of incident in the public transit network.
 message Alert {
-  // Time when the alert should be shown to the user. If missing, the
-  // alert will be shown as long as it appears in the feed.
-  // If multiple ranges are given, the alert will be shown during all of them.
+  // Time when the _alert should be shown to the user. If missing, the
+  // _alert will be shown as long as it appears in the feed.
+  // If multiple ranges are given, the _alert will be shown during all of them.
   repeated TimeRange active_period = 1;
 
-  // Entities whose users we should notify of this alert.
+  // Entities whose users we should notify of this _alert.
   repeated EntitySelector informed_entity = 5;
 
-  // Cause of this alert.
+  // Cause of this _alert.
   enum Cause {
     UNKNOWN_CAUSE = 1;
     OTHER_CAUSE = 2;        // Not machine-representable.
@@ -412,13 +412,13 @@ message Alert {
   }
   optional Effect effect = 7 [default = UNKNOWN_EFFECT];
 
-  // The URL which provides additional information about the alert.
+  // The URL which provides additional information about the _alert.
   optional TranslatedString url = 8;
 
-  // Alert header. Contains a short summary of the alert text as plain-text.
+  // Alert header. Contains a short summary of the _alert text as plain-text.
   optional TranslatedString header_text = 10;
 
-  // Full description for the alert as plain-text. The information in the
+  // Full description for the _alert as plain-text. The information in the
   // description should add to the information of the header.
   optional TranslatedString description_text = 11;
 

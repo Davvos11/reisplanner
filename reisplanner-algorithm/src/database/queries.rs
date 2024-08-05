@@ -3,7 +3,6 @@ use std::str::FromStr;
 
 use anyhow::Context;
 use rbatis::RBatis;
-use rbs::to_value;
 use serde::Deserialize;
 
 use reisplanner_gtfs::utils::TimeTuple;

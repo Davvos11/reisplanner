@@ -1,4 +1,3 @@
-use rbatis::executor::Executor;
 use rbatis::RBatis;
 use rbatis::table_sync::SqliteTableMapper;
 use serde::Serialize;

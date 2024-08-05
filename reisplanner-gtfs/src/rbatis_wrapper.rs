@@ -1,6 +1,8 @@
+use async_trait::async_trait;
 use rbatis::executor::Executor;
 use serde::{Deserialize, Serialize};
 
+#[async_trait]
 pub trait DatabaseModel<T>
 where T: for<'de> Deserialize<'de> + Serialize
 {
@@ -9,7 +11,7 @@ where T: for<'de> Deserialize<'de> + Serialize
         tables: &[T],
         batch_size: u64,
     ) -> Result<rbatis::rbdc::db::ExecResult, rbatis::rbdc::Error>;
-    
+
     async fn delete_all(
         executor: &dyn Executor
     ) -> Result<rbatis::rbdc::db::ExecResult, rbatis::rbdc::Error>;
@@ -28,6 +30,7 @@ macro_rules! crud_trait {
         rbatis::impl_delete!($table {delete_all() => "``"});
         rbatis::impl_update!($table {update_all() => "``"});
 
+        #[async_trait]
         impl DatabaseModel<$table> for $table {
             async fn insert_batch(executor: &dyn Executor, tables: &[$table], batch_size: u64) -> Result<ExecResult, Error> {
                 <$table>::insert_batch(executor, tables, batch_size).await

@@ -1,9 +1,10 @@
 use tracing_subscriber::EnvFilter;
+
 use reisplanner_gtfs::utils::TimeTuple;
 
 use crate::algorithms::csa::{get_timetable, print_result, run_csa};
 use crate::database::new_db_connection;
-use crate::getters::{get_stop, get_stop_str};
+use crate::getters::get_stop;
 
 #[tokio::test]
 async fn csa_algorithm() -> anyhow::Result<()>{
