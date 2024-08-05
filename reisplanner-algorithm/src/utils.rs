@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 #[macro_export]
 macro_rules! benchmark {
     ($timer:expr, $fmt:expr) => {
-        println!("{} in {:?}", $fmt, $timer.elapsed());
+        println!("{} in {:?}", format!($fmt), $timer.elapsed());
         *$timer = Instant::now();
     };
     ($timer:expr, $fmt:expr, $($arg:tt)*) => {

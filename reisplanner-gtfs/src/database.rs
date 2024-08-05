@@ -1,7 +1,8 @@
+use rbatis::executor::Executor;
 use rbatis::RBatis;
 use rbatis::table_sync::SqliteTableMapper;
 use serde::Serialize;
-use tracing::{instrument, trace};
+use tracing::{debug, instrument, trace};
 use reisplanner_gtfs::gtfs::types::{Agency, CalendarDate, FeedInfo, LastUpdated, Route, Shape, Stop, StopTime, Transfer, Trip};
 
 #[instrument]
@@ -21,18 +22,33 @@ pub async fn init_db() -> anyhow::Result<RBatis> {
     sync_table::<Trip>(&rb, "trip").await?;
     sync_table::<LastUpdated>(&rb, "last_updated").await?;
 
-    // Add indices
-    add_index(&rb, "trip", &["trip_id"]).await?;
-    add_index(&rb, "trip", &["trip_id", "trip_long_name"]).await?;
-    add_index(&rb, "stop_time", &["stop_id", "trip_id"]).await?;
-    add_index(&rb, "stop_time", &["stop_sequence", "trip_id"]).await?;
-    add_index(&rb, "stop_time", &["trip_id"]).await?;
-    add_index(&rb, "stop_time", &["departure_time"]).await?;
-    add_index(&rb, "stop_time", &["trip_id", "departure_time"]).await?;
-    add_index(&rb, "route", &["route_id"]).await?;
-    add_index(&rb, "stop", &["stop_id"]).await?;
-    
     Ok(rb)
+}
+
+pub async fn add_indices(rb: &RBatis) -> anyhow::Result<Vec<String>> {
+    let mut names = Vec::new();
+    debug!("Adding indices, this may take a while...");
+
+    // Add indices
+    names.push(add_index(rb, "trip", &["trip_id"]).await?);
+    names.push(add_index(rb, "trip", &["trip_id", "trip_long_name"]).await?);
+    names.push(add_index(rb, "stop_time", &["stop_id", "trip_id"]).await?);
+    names.push(add_index(rb, "stop_time", &["stop_sequence", "trip_id"]).await?);
+    names.push(add_index(rb, "stop_time", &["trip_id"]).await?);
+    names.push(add_index(rb, "stop_time", &["id"]).await?);
+    names.push(add_index(rb, "route", &["route_id"]).await?);
+    names.push(add_index(rb, "stop", &["stop_id"]).await?);
+
+    Ok(names)
+}
+
+pub async fn drop_indices(rb: &RBatis, names: &[String]) -> anyhow::Result<()> {
+    debug!("Dropping indices, this may take a while...");
+    for name in names {
+        drop_index(rb, name).await?
+    }
+    
+    Ok(())
 }
 
 /// Get another database connection.
@@ -60,7 +76,7 @@ where
     Ok(())
 }
 
-async fn add_index(rb: &RBatis, table: &str, columns: &[&str]) -> anyhow::Result<()> {
+async fn add_index(rb: &RBatis, table: &str, columns: &[&str]) -> anyhow::Result<String> {
     let name = columns.join("_") + "_idx_" + table;
     rb.query(
         format!("CREATE INDEX IF NOT EXISTS {name} ON {table} ({});",
@@ -68,5 +84,13 @@ async fn add_index(rb: &RBatis, table: &str, columns: &[&str]) -> anyhow::Result
         vec![],
     ).await?;
 
+    Ok(name)
+}
+
+async fn drop_index(rb: &RBatis, name: &String) -> anyhow::Result<()> {
+    rb.exec(
+        format!("DROP INDEX IF EXISTS {name}").as_str(), vec![]
+    ).await?;
+    
     Ok(())
 }

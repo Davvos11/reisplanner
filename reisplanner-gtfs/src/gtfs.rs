@@ -182,6 +182,25 @@ where
     Ok(())
 }
 
+async fn add_stop_time_ids(db: &dyn Executor) -> Result<(), GtfsError> {
+    dbg!("Sorting stop_time...");
+    db.exec(
+        "WITH OrderedRows AS (
+                SELECT
+                ROW_NUMBER() OVER (ORDER BY trip_id, stop_sequence) AS row_num,
+                trip_id, stop_sequence
+                FROM stop_time
+            )
+            UPDATE stop_time
+            SET id = OrderedRows.row_num
+            FROM OrderedRows
+            WHERE stop_time.trip_id = OrderedRows.trip_id
+            AND stop_time.stop_sequence = OrderedRows.stop_sequence;",
+        vec![]).await?;
+
+    Ok(())
+}
+
 const URL: &str = "https://gtfs.ovapi.nl/nl/gtfs-nl.zip";
 const FOLDER: &str = "reisplanner-gtfs/gtfs";
 
@@ -231,6 +250,7 @@ async fn download_parse_gtfs(db: &RBatis) -> Result<(), GtfsError> {
     gtfs_to_db::<Trip>(&transaction, format!("{FOLDER}/trips.txt").as_str()).await?;
     gtfs_to_db::<Shape>(&transaction, format!("{FOLDER}/shapes.txt").as_str()).await?;
     gtfs_to_db::<StopTime>(&transaction, format!("{FOLDER}/stop_times.txt").as_str()).await?;
+    add_stop_time_ids(db).await?;
 
     transaction.commit().await?;
 

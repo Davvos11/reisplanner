@@ -226,6 +226,9 @@ pub struct StopTime {
     pub timepoint: i32,
     pub shape_dist_traveled: Option<f64>,
     pub fare_units_traveled: Option<i32>,
+    // Field added after sorting
+    #[serde(default)]
+    pub id: Option<i32>,
     // Fields added by realtime updates
     #[serde(default)]
     pub arrival_delay: Option<i32>,
@@ -247,6 +250,7 @@ impl Default for StopTime {
             timepoint: Default::default(),
             shape_dist_traveled: Some(Default::default()),
             fare_units_traveled: Some(Default::default()),
+            id: Some(Default::default()),
             arrival_delay: Some(Default::default()),
             departure_delay: Some(Default::default()),
         }

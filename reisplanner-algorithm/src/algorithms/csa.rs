@@ -1,16 +1,17 @@
 use std::cmp::Ordering;
 use std::collections::{BTreeSet, HashMap};
-use std::iter;
 
-use rbatis::{PageRequest, RBatis};
+use indicatif::{ProgressBar, ProgressStyle};
 use rbatis::executor::Executor;
+use rbatis::RBatis;
 use serde::{Deserialize, Serialize};
 use tokio::time::Instant;
-
-use reisplanner_gtfs::gtfs::types::{Route, StopTime, Trip};
+use tracing::debug;
+use tracing::field::debug;
+use reisplanner_gtfs::gtfs::types::{Route, Trip};
 
 use crate::benchmark;
-use crate::database::queries::get_parent_station_map;
+use crate::database::queries::{count_stop_times, get_parent_station_map, get_stop_times};
 use crate::getters::get_stop;
 use crate::utils::{deserialize_from_disk, seconds_to_hms, serialize_to_disk};
 
@@ -57,54 +58,46 @@ impl Connection {
     }
 }
 
-const PAGE_SIZE: u64 = 10000;
+const PAGE_SIZE: u64 = 1_000_000;
 
 async fn generate_timetable(db: &RBatis) -> anyhow::Result<Vec<Connection>> {
-    eprintln!("Getting trips, routes and stations...");
-    let mut t = Instant::now();
-    let mut t1 = Instant::now();
+    debug!("Getting trips, routes and stations...");
+    // let mut t = Instant::now();
+    // let mut t1 = Instant::now();
     let parent_stations = get_parent_station_map(db).await?;
-    benchmark!(&mut t, "Got stops");
+    // benchmark!(&mut t, "Got stops");
+    let total_count = count_stop_times(db).await?;
+    // benchmark!(&mut t, "Got stop_time count");
 
+    debug("Generating timetable from stop_times, this will take a while...");
     let mut timetable = BTreeSet::new();
+    let bar = ProgressBar::new(total_count);
+    bar.set_style(ProgressStyle::default_bar()
+        .template("{wide_bar} Elapsed: {elapsed_precise}, ETA: {eta_precise}")
+        .unwrap());
 
-    let mut page_request = PageRequest::new(1, PAGE_SIZE);
-    page_request = page_request.set_do_count(false);
-    let mut stop_time_cache: Option<StopTime> = None;
-    let mut highest_trip_id = 0;
+    let mut highest_id = 0;
     loop {
-        // TODO add primary key id to StopTime so pages can be fast
-        let page = StopTime::select_all_grouped_paged(db, &page_request).await?;
-        benchmark!(&mut t, "Got stop_times");
-
-        let stop_times = page.records;
+        let stop_times = get_stop_times(highest_id, PAGE_SIZE, db).await?;
         let count = stop_times.len();
-        let stop_times: Vec<_>=
-            if let Some(stop_time) = stop_time_cache {
-                iter::once(stop_time).chain(stop_times.into_iter()).collect()
-            } else {
-                stop_times.into_iter().collect()
-            };
-        benchmark!(&mut t, "Did iterator shenanigans");
+        // benchmark!(&mut t, "Got {count} stop_times");
 
         let stop_connections = stop_times.windows(2);
-        // let bar = ProgressBar::new(stop_connections.len() as u64);
-        let mut t2 = Instant::now();
+        // let mut t2 = Instant::now();
         let mut first = true;
 
         for window in stop_connections {
-            // bar.inc(1);
             if let [dep_stop, arr_stop] = window {
                 // Don't create a connection for stops on different trips
                 if dep_stop.trip_id != arr_stop.trip_id { continue; }
 
-                t2 = Instant::now();
+                // t2 = Instant::now();
                 let dep_station = parent_stations.get(&dep_stop.stop_id)
                     .ok_or(anyhow::Error::msg("Parent station not found"))?;
-                if first {benchmark!(&mut t2, "\tGot dep parent");};
+                // if first { benchmark!(&mut t2, "\tGot dep parent"); };
                 let arr_station = parent_stations.get(&arr_stop.stop_id)
                     .ok_or(anyhow::Error::msg("Parent station not found"))?;
-                if first {benchmark!(&mut t2, "\tGot arr parent");};
+                // if first { benchmark!(&mut t2, "\tGot arr parent"); };
                 let connection = Connection {
                     departure_station: *dep_station,
                     arrival_station: *arr_station,
@@ -112,28 +105,30 @@ async fn generate_timetable(db: &RBatis) -> anyhow::Result<Vec<Connection>> {
                     arrival_timestamp: arr_stop.arrival_time.into(),
                     trip_id: dep_stop.trip_id,
                 };
-                if first {benchmark!(&mut t2, "\tCreated connection");};
+                // if first { benchmark!(&mut t2, "\tCreated connection"); };
                 timetable.insert(connection.clone());
-                if first {benchmark!(&mut t2, "\tInserted connection"); println!();};
+                if first {
+                    // benchmark!(&mut t2, "\tInserted connection");
+                    // println!();
+                };
             }
-            if first {first = false;}
+            if first { first = false; }
         }
 
-        // bar.finish();
-        benchmark!(&mut t, "Generated connections");
+        // benchmark!(&mut t, "Generated connections");
 
+        bar.inc(count as u64);
         if count != PAGE_SIZE as usize {
             break;
         } else {
-            page_request.page_no += 1;
-            stop_time_cache = stop_times.last().cloned();
-            highest_trip_id = stop_times.last().unwrap().trip_id;
+            highest_id = stop_times.last().unwrap().id.unwrap();
         }
     }
+    bar.finish();
 
-    benchmark!(&mut t1, "Generated timetable bintree");
+    // benchmark!(&mut t1, "Generated timetable bintree");
     let timetable: Vec<_> = timetable.into_iter().collect();
-    benchmark!(&mut t1, "Collected timetable vec");
+    // benchmark!(&mut t1, "Collected timetable vec");
     Ok(timetable)
 }
 
@@ -190,9 +185,9 @@ pub async fn run_csa(
 
     earliest_arrival.insert(departure, departure_time.into());
 
-    let mut t = Instant::now();
+    // let mut t = Instant::now();
     csa_main_loop(timetable, arrival, &mut earliest_arrival, &mut in_connection);
-    benchmark!(&mut t, "Found route");
+    // benchmark!(&mut t, "Found route");
 
     if !in_connection.contains_key(&arrival) {
         Ok(None)
