@@ -155,7 +155,7 @@ fn csa_main_loop(
     }
 }
 
-const TIMETABLE: &str = "timetable.blob";
+const TIMETABLE: &str = "csa_timetable.blob";
 
 pub async fn get_timetable(db: &RBatis, cache: bool) -> anyhow::Result<Vec<Connection>> {
     if !cache {

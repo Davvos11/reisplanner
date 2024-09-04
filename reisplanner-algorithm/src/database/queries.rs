@@ -10,7 +10,7 @@ use reisplanner_gtfs::utils::TimeTuple;
 #[derive(Deserialize)]
 struct StationParent {
     stop_id: String,
-    parent_station: Option<String>
+    parent_station: Option<String>,
 }
 
 pub async fn get_parent_station_map(db: &RBatis) -> anyhow::Result<HashMap<u32, u32>> {
@@ -20,7 +20,7 @@ pub async fn get_parent_station_map(db: &RBatis) -> anyhow::Result<HashMap<u32, 
 
     let mut map = HashMap::with_capacity(stops.len());
 
-    for StationParent{ stop_id, parent_station } in stops {
+    for StationParent { stop_id, parent_station } in stops {
         let stop_id = parse_stop_id(&stop_id)?;
         match parent_station {
             None => {
@@ -64,7 +64,7 @@ pub async fn get_stop_times(last_id: u32, page_size: u64, db: &RBatis) -> anyhow
             format!("select id, trip_id, stop_id, departure_time, arrival_time 
             from stop_time
             where id >= {last_id} order by id limit {page_size}").as_str(),
-        vec![]
+            vec![],
         ).await?;
 
     Ok(stop_times)
@@ -73,4 +73,26 @@ pub async fn get_stop_times(last_id: u32, page_size: u64, db: &RBatis) -> anyhow
 pub async fn count_stop_times(db: &RBatis) -> anyhow::Result<u64> {
     let count: u64 = db.query_decode("select count(*) from stop_time", vec![]).await?;
     Ok(count)
+}
+
+
+#[derive(Deserialize)]
+struct TripRoute {
+    trip_id: u32,
+    route_id: u32,
+}
+
+
+pub async fn get_trip_route_map(db: &RBatis) -> anyhow::Result<HashMap<u32, u32>> {
+    let trips: Vec<TripRoute> = db
+        .query_decode("select trip_id, route_id from trip", vec![])
+        .await?;
+
+    let mut map = HashMap::with_capacity(trips.len());
+
+    for TripRoute {trip_id, route_id} in trips {
+        map.insert(trip_id, route_id);
+    }
+
+    Ok(map)
 }
