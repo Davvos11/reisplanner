@@ -547,6 +547,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "encoding_rs_io"
+version = "0.1.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1cc3c5651fb62ab8aa3103998dade57efdd028544bd300516baa31840c252a83"
+dependencies = [
+ "encoding_rs",
+]
+
+[[package]]
 name = "equivalent"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1633,8 +1642,9 @@ dependencies = [
 
 [[package]]
 name = "rbatis"
-version = "4.5.26"
-source = "git+https://github.com/Davvos11/rbatis#63361966facd44c5e207bcd11007a0f40dfe36b0"
+version = "4.5.29"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9d35a7ea98a44bc09514cf65199bc692de72deb4778eb0dc2efc0f9f929f9c0f"
 dependencies = [
  "async-trait",
  "dark-std",
@@ -1653,8 +1663,9 @@ dependencies = [
 
 [[package]]
 name = "rbatis-codegen"
-version = "4.5.18"
-source = "git+https://github.com/Davvos11/rbatis#63361966facd44c5e207bcd11007a0f40dfe36b0"
+version = "4.5.20"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7da6221408a50b9062f9591111dbbf792513926858706a01580e53b2aa0844a2"
 dependencies = [
  "async-trait",
  "base64",
@@ -1670,8 +1681,9 @@ dependencies = [
 
 [[package]]
 name = "rbatis-macro-driver"
-version = "4.5.5"
-source = "git+https://github.com/Davvos11/rbatis#63361966facd44c5e207bcd11007a0f40dfe36b0"
+version = "4.5.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "21b63da16df481c051f3999c74069be0a4321cc3a168b1327f48e040cb0e9a3b"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1681,8 +1693,9 @@ dependencies = [
 
 [[package]]
 name = "rbdc"
-version = "4.5.33"
-source = "git+https://github.com/Davvos11/rbatis#63361966facd44c5e207bcd11007a0f40dfe36b0"
+version = "4.5.34"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3077d7d2bdb2f47c16b3486a81a57fece0d323e8ec9f2a3e5ce2ca21d8217924"
 dependencies = [
  "async-trait",
  "bigdecimal",
@@ -1695,7 +1708,6 @@ dependencies = [
  "log",
  "lru",
  "memchr",
- "once_cell",
  "rbs",
  "rustls",
  "rustls-pemfile",
@@ -1711,7 +1723,8 @@ dependencies = [
 [[package]]
 name = "rbdc-pool-fast"
 version = "4.5.9"
-source = "git+https://github.com/Davvos11/rbatis#63361966facd44c5e207bcd11007a0f40dfe36b0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f817102de73cdeff274f91550d55fe4da22b6299033ad0025896d0fb0f32ba07"
 dependencies = [
  "async-trait",
  "dark-std",
@@ -1724,8 +1737,9 @@ dependencies = [
 
 [[package]]
 name = "rbdc-sqlite"
-version = "4.5.4"
-source = "git+https://github.com/Davvos11/rbatis#63361966facd44c5e207bcd11007a0f40dfe36b0"
+version = "4.5.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "60a151892b73d9fd6814e0de9c595f09e1764b3a27bb2338dc6ba9d5b7537f17"
 dependencies = [
  "atoi",
  "bytes",
@@ -1752,8 +1766,9 @@ dependencies = [
 
 [[package]]
 name = "rbs"
-version = "4.5.16"
-source = "git+https://github.com/Davvos11/rbatis#63361966facd44c5e207bcd11007a0f40dfe36b0"
+version = "4.5.18"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c7c83c025ab0277fbac4fdf566d68e3ff4ae7504e3595de3059e1803f7f3685e"
 dependencies = [
  "indexmap",
  "serde",
@@ -1856,6 +1871,24 @@ dependencies = [
  "tracing-subscriber",
  "vergen",
  "zip",
+]
+
+[[package]]
+name = "reisplanner-iff"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "csv",
+ "encoding_rs",
+ "encoding_rs_io",
+ "indicatif",
+ "rbatis",
+ "rbdc-sqlite",
+ "rbs",
+ "serde",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]

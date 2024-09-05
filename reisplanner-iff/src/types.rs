@@ -1,0 +1,81 @@
+use rbatis::{crud, impl_delete};
+use serde::{Deserialize, Serialize};
+use crate::utils::bool_from_int;
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct Transfer {
+    /// Station the transfer is from
+    pub stop_code_from: String,
+    /// Station the transfer is to.
+    /// If None, this transfer time is valid for the whole `stop_code_from` station.
+    pub stop_code_to: Option<String>,
+    /// Transfer time in minutes
+    pub transfer_time: u32,
+    pub transfer_type: Option<u32>,
+    /// Human-readable description of the transfer type
+    pub transfer_description: Option<String>,
+}
+
+impl Default for Transfer {
+    fn default() -> Self {
+        Transfer {
+            stop_code_from: Default::default(),
+            stop_code_to: Some(Default::default()),
+            transfer_time: Default::default(),
+            transfer_type: Some(Default::default()),
+            transfer_description: Some(Default::default()),
+        }
+    }
+}
+
+crud!(Transfer {});
+impl_delete!(Transfer {delete_all() => "``"});
+
+/// Een overstapverbinding hoeft niet altijd binnen een station te liggen, maar kan ook op een (buurt)
+/// station liggen. Om de overstap te overbruggen kan het mogelijk zijn gebruik te maken van een
+/// alternatieve vervoersmodaliteit. Het connmode bestand bevat alle toegestane vormen van overstap
+/// mogelijkheden.
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct ConnectionMode {
+    pub con_code: u32,
+    pub con_type: u32,
+    pub con_mode: String,
+}
+
+/// Het bestand contconn legt de (overstap) relatie tussen twee (buurt) stations en de overstap vorm
+/// (connmode) vast
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct ContConnection {
+    pub from_station: String,
+    pub to_station: String,
+    /// Transfer time in minutes
+    pub transfer_time: u32,
+    /// Type as `ConnectionMode.con_code`
+    pub transfer_type: u32,
+}
+
+// TODO xfootnote
+// TODO xchanges
+
+/// Het bestand Stations bevat alle station gerelateerde gegevens. Het is noodzakelijk dit bestand te
+/// gebruiken om de gegevens van stations in (trein) dienstregeling publicaties correct weer te geven
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct Station {
+    #[serde(deserialize_with="bool_from_int")]
+    pub transfer: bool,
+    /// `stop_code` in GTFS `stops` table
+    pub station_abr: String,
+    /// Standard transfer time in minutes
+    pub transfer_time: u32,
+    /// Maximum transfer time in minutes
+    /// (maximale overstaptijd is hier altijd gelijk aan de standaard overstaptijd;
+    /// afwijkingen op de standaard overstaptijd zijn vastgelegd in: Changes (zie 5.2.3))
+    /// However, I think/hope this data is already in the GTFS data?
+    pub max_transfer_time: u32,
+    pub country_code: String,
+    pub time_zone: u32,
+    _empty: String,
+    pub x_coord: i32,
+    pub y_coord: i32,
+    pub station_name: String,
+}
