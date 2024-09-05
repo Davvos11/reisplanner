@@ -52,6 +52,7 @@ async fn raptor_algorithm() -> anyhow::Result<()> {
     let cases = [
         (18124, 18305, TimeTuple(10, 00, 00)),
         (18124, 18004, TimeTuple(10, 00, 00)),
+        (18124, 18195, TimeTuple(10, 00, 00)),
     ];
 
     for (departure, arrival, departure_time) in cases {

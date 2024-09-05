@@ -6,19 +6,24 @@ use indicatif::{ProgressBar, ProgressStyle};
 use rbatis::executor::Executor;
 use rbatis::RBatis;
 use serde::{Deserialize, Serialize};
-use tracing::debug;
+use tracing::{debug, trace};
 use tracing::field::debug;
 use reisplanner_gtfs::gtfs::types::{Route, Trip};
 use crate::database::queries::{count_stop_times, get_parent_station_map, get_stop_times, get_trip_route_map};
-use crate::getters::get_stop;
+use crate::getters::{get_stop, get_stop_readable};
 use crate::utils::{deserialize_from_disk, seconds_to_hms, serialize_to_disk};
 
 #[derive(Debug, Serialize, Deserialize, Clone, Eq, PartialEq)]
+pub struct Location {
+    stop_id: u32,
+    /// Parent stop_id but without the `stopearea:` prefix
+    parent_id: u32,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Eq, PartialEq)]
 pub struct Connection {
-    /// Parent stop_id but without the `stopearea:` prefix
-    departure_station: u32,
-    /// Parent stop_id but without the `stopearea:` prefix
-    arrival_station: u32,
+    departure_station: Location,
+    arrival_station: Location,
     departure: u32,
     arrival: u32,
     trip_id: u32,
@@ -26,10 +31,10 @@ pub struct Connection {
 
 impl Connection {
     pub async fn arrival_name(&self, db: &impl Executor) -> anyhow::Result<String> {
-        Ok(get_stop(&self.arrival_station, db).await?.stop_name)
+        get_stop_readable(&self.arrival_station.stop_id, db).await
     }
     pub async fn departure_name(&self, db: &impl Executor) -> anyhow::Result<String> {
-        Ok(get_stop(&self.departure_station, db).await?.stop_name)
+        get_stop_readable(&self.departure_station.stop_id, db).await
     }
     pub async fn route_information(&self, db: &impl Executor) -> anyhow::Result<String> {
         let trip = Trip::select_by_id(db, &self.trip_id).await?
@@ -41,13 +46,12 @@ impl Connection {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Eq, PartialEq)]
-/// Note: this is not the same concept as a GTFS route, this
-/// is the same as a GTFS trip
+/// Note: while this is the same concept as a GTFS route, they are not equal.
+/// In the OvApi GTFS set, most routes only have one trip.
+/// In order to efficiently use Raptor, trips with the same stops should be
+/// combined in the same routes.
 pub struct RRoute {
     stops: Vec<u32>,
-    // TODO this is always just one vec because the stop_times are ordered
-    //  Also, it seems that in the OVapi GTFS all trips just contain
-    //  a single set of stop_times and not multiple sets
     connections: Vec<Vec<Connection>>, 
 }
 
@@ -118,7 +122,7 @@ async fn generate_timetable(db: &RBatis) -> anyhow::Result<HashMap<u32, RRoute>>
     let total_count = count_stop_times(db).await?;
 
     debug("Generating timetable from stop_times, this will take a while...");
-    let mut routes = HashMap::new(); // trip_id -> RRoute
+    let mut routes = HashMap::new(); // [stop_id] -> RRoute
     let bar = ProgressBar::new(total_count);
     bar.set_style(ProgressStyle::default_bar()
         .template("{wide_bar} Elapsed: {elapsed_precise}, ETA: {eta_precise}")?);
@@ -130,23 +134,21 @@ async fn generate_timetable(db: &RBatis) -> anyhow::Result<HashMap<u32, RRoute>>
 
         let stop_connections = stop_times.windows(2);
 
-        let mut need_to_get_stops = true;
         let mut current_trip_stops = Vec::new();
         let mut current_trip_connections = Vec::new();
 
         for window in stop_connections {
             if let [dep_stop, arr_stop] = window {
-                let dep_station = parent_stations.get(&dep_stop.stop_id)
+                let dep_parent_station = parent_stations.get(&dep_stop.stop_id)
                     .ok_or(anyhow::Error::msg("Parent station not found"))?;
-                let arr_station = parent_stations.get(&arr_stop.stop_id)
+                let arr_parent_station = parent_stations.get(&arr_stop.stop_id)
                     .ok_or(anyhow::Error::msg("Parent station not found"))?;
 
-                if need_to_get_stops {
-                    current_trip_stops.push(*dep_station);
-                }
+                // Use parent station for trip "identifier"
+                current_trip_stops.push(*dep_parent_station);
                 let connection = Connection{
-                    departure_station: *dep_station,
-                    arrival_station: *arr_station,
+                    departure_station: Location {stop_id: dep_stop.stop_id, parent_id: *dep_parent_station},
+                    arrival_station: Location {stop_id: arr_stop.stop_id, parent_id: *arr_parent_station},
                     departure: dep_stop.departure_time.into(),
                     arrival: arr_stop.arrival_time.into(),
                     trip_id: dep_stop.trip_id,
@@ -157,14 +159,13 @@ async fn generate_timetable(db: &RBatis) -> anyhow::Result<HashMap<u32, RRoute>>
                 // This if statement does not trigger at the very last iteration
                 // That's why we also write this at count != PAGE_SIZE below.
                 if dep_stop.trip_id != arr_stop.trip_id {
-                    let route = routes.entry(dep_stop.trip_id)
+                    // TODO clone
+                    let route = routes.entry(current_trip_stops.clone())
                         .or_insert(RRoute::new(current_trip_stops));
                     route.connections.push(current_trip_connections);
 
                     current_trip_stops = Vec::new();
                     current_trip_connections = Vec::new();
-                    // We only need to get stops (for the next trip) if we haven't already
-                    need_to_get_stops = !routes.contains_key(&arr_stop.trip_id);
                 }
             }
         }
@@ -172,7 +173,7 @@ async fn generate_timetable(db: &RBatis) -> anyhow::Result<HashMap<u32, RRoute>>
         bar.inc(count as u64);
         if count != PAGE_SIZE as usize {
             if let Some(last_stop) = stop_times.last() {
-                let route = routes.entry(last_stop.trip_id)
+                let route = routes.entry(current_trip_stops.clone())
                     .or_insert(RRoute::new(current_trip_stops));
                 route.connections.push(current_trip_connections);
             }
@@ -183,6 +184,12 @@ async fn generate_timetable(db: &RBatis) -> anyhow::Result<HashMap<u32, RRoute>>
     }
     bar.finish();
 
+    // Change key type to be an integer
+    let routes = routes.into_iter()
+        .enumerate()
+        .map(|(i, (_, v))| {(i as u32, v)})
+        .collect();
+    
     Ok(routes)
 }
 
@@ -232,7 +239,10 @@ pub async fn run_raptor(
     marked.insert(departure);
 
     // Main loop:
+    let mut last_k = 0;
     for k in 1..=MAX_K {
+        last_k = k;
+        trace!("{k}th raptor loop...");
         // Accumulate routes serving marked stops from previous round
         let mut q: HashMap<u32, u32> = HashMap::new();
 
@@ -252,11 +262,8 @@ pub async fn run_raptor(
                 q.insert(*r, *p);
             }
         }
-        // dbg!(&marked);
-        // dbg!(&q);
         marked.clear();
 
-        println!("{k} --------------------------------");
         // Traverse each route in Q
         for (r, p) in q.iter() {
             // t = the current trip
@@ -265,32 +272,26 @@ pub async fn run_raptor(
 
             let route = timetable.get(r)
                 .ok_or(anyhow::Error::msg("Route not found"))?;
-            // dbg!(&route.stops);
-            // dbg!(r, p, route);
             // For each stop p_i of r beginning with p
             for (i, p_i) in route.stops_from(p) {
-                // dbg!(i, p_i);
                 let p_i = p_i as usize;
                 // Can the label be improved in this round?
                 if let Some(t) = t {
                     if t[i-1].arrival < min(earliest_arrival[arrival as usize], earliest_arrival[p_i]) {
                         earliest_k_arrival[p_i][k] = t[i-1].arrival;
                         earliest_arrival[p_i] = t[i-1].arrival;
-                        prev[p_i] = Some((&t[t_from], &t[i-1], interchange[t[t_from].departure_station as usize].unwrap()));
+                        prev[p_i] = Some((&t[t_from], &t[i-1], interchange[t[t_from].departure_station.parent_id as usize].unwrap()));
                         marked.insert(p_i as u32);
                     }
                 }
                 // Can we catch an earlier trip at p_i
                 if t.is_none() || earliest_k_arrival[p_i][k-1] < t.unwrap()[i].departure {
-                    // dbg!(earliest_k_arrival[p_i][k-1], &t.map(|t| &t[i]));
                     t = route.trip_from(&(i as u32), &earliest_k_arrival[p_i][k-1]);
-                    // dbg!(i, earliest_k_arrival[p_i][k-1]);
                     interchange[p_i] = Some((p_i, p_i, 0)); // TODO
                     t_from = i;
                 }
             }
         }
-        // exit(0);
 
         // Look at footpaths
 
@@ -298,15 +299,16 @@ pub async fn run_raptor(
             break;
         }
     }
+
+    debug!("Finished Raptor path planning in {last_k} cycles");
     
     let mut parts: Vec<_> = Vec::new();
     let mut cur = arrival as usize;
     while let Some(tuple@(c1, c2, (p1, p2, dur))) = prev[cur] {
         parts.push((c1, c2));
-        // dbg!(&tuple);
         // parts.push(TripPart::Connection(c1, c2));
         // parts.push(TripPart::Footpath(p1, p2, dur));
-        cur = c1.departure_station as usize;
+        cur = c1.departure_station.parent_id as usize;
     }
     
     parts.reverse();

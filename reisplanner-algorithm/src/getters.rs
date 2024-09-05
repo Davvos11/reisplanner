@@ -16,3 +16,11 @@ pub async fn get_stop_str(stop_id: &String, db: &impl Executor) -> anyhow::Resul
     Ok(stop)
 }
 
+pub async fn get_stop_readable(stop_id: &u32, db: &impl Executor) -> anyhow::Result<String> {
+    let stop = get_stop(stop_id, db).await?;
+    let mut result = stop.stop_name;
+    if let Some(platform) = stop.platform_code {
+        result = format!("{result} {platform}");
+    }
+    Ok(result)
+}
