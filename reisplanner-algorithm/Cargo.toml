@@ -6,9 +6,9 @@ edition = "2021"
 [dependencies]
 reisplanner-gtfs = { path = "../reisplanner-gtfs", package = "reisplanner-gtfs" }
 tokio = { version = "1.38.0", features = ["full"] }
-rbs = { git = "https://github.com/Davvos11/rbatis", package = "rbs" }
-rbatis = { git = "https://github.com/Davvos11/rbatis"}
-rbdc-sqlite = { git = "https://github.com/Davvos11/rbatis", package = "rbdc-sqlite" }
+rbs = "4.5.18"
+rbatis = "4.5.29"
+rbdc-sqlite = "4.5.5"
 thiserror = "1.0.61"
 anyhow = "1.0.86"
 tracing = "0.1.40"
