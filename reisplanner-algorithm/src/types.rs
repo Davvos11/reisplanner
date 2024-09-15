@@ -1,7 +1,7 @@
 use rbatis::executor::Executor;
 use crate::algorithms::raptor::Connection;
 use crate::getters::get_stop_readable;
-use crate::utils::seconds_to_hms;
+use crate::utils::{seconds_to_hms, seconds_to_ms};
 
 pub enum JourneyPart {
     Vehicle(Connection, Connection),
@@ -27,7 +27,7 @@ impl JourneyPart {
                     format!("Change from {} to {} ({} mins)",
                             get_stop_readable(&(*from as u32), db).await?,
                             get_stop_readable(&(*to as u32), db).await?,
-                            duration,
+                            seconds_to_ms(*duration),
                     )
                 )
             }

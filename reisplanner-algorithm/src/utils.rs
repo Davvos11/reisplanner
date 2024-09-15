@@ -38,6 +38,12 @@ pub fn seconds_to_hms(seconds: u32) -> String {
     format!("{:02}:{:02}:{:02}", hours, minutes, seconds)
 }
 
+pub fn seconds_to_ms(seconds: u32) -> String {
+    let minutes = (seconds % 3600) / 60;
+    let seconds = seconds % 60;
+    format!("{:02}:{:02}", minutes, seconds)
+}
+
 #[macro_export]
 macro_rules! vec_to_hashmap {
     ($vec_ref:expr,$($field_name:ident$(.)?)+) => {{

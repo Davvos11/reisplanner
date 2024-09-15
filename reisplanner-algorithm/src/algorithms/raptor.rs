@@ -297,7 +297,7 @@ pub async fn run_raptor<'a>(
                 if t.is_none() ||
                     earliest_k_arrival[p_i][k - 1] + transfer_time < t.unwrap()[i].departure
                 {
-                    t = route.trip_from(&(i as u32), &earliest_k_arrival[p_i][k - 1] + transfer_time);
+                    t = route.trip_from(&(i as u32), &(earliest_k_arrival[p_i][k - 1] + transfer_time));
                     interchange[p_i] = Some((p_i, p_i, *transfer_time));
                     t_from = i;
                 }
