@@ -90,8 +90,34 @@ pub async fn get_trip_route_map(db: &RBatis) -> anyhow::Result<HashMap<u32, u32>
 
     let mut map = HashMap::with_capacity(trips.len());
 
-    for TripRoute {trip_id, route_id} in trips {
+    for TripRoute { trip_id, route_id } in trips {
         map.insert(trip_id, route_id);
+    }
+
+    Ok(map)
+}
+
+
+#[derive(Deserialize)]
+struct TransferTime {
+    stop_id: String,
+    transfer_time: u32,
+}
+
+
+pub async fn get_transfer_times(db: &RBatis) -> anyhow::Result<HashMap<u32, u32>> {
+    let times: Vec<TransferTime> = db
+        .query_decode(
+            "select s.stop_id, t.transfer_time from station_transfer t
+                join stop parent_stop on t.station_code = parent_stop.stop_code
+                join stop s on s.parent_station = parent_stop.stop_id",
+            vec![])
+        .await?;
+
+    let mut map = HashMap::with_capacity(times.len());
+
+    for TransferTime { stop_id, transfer_time } in times {
+        map.insert(stop_id.parse()?, transfer_time);
     }
 
     Ok(map)

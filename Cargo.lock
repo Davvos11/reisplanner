@@ -1838,6 +1838,7 @@ dependencies = [
  "rbdc-sqlite",
  "rbs",
  "reisplanner-gtfs",
+ "reisplanner-iff",
  "serde",
  "thiserror",
  "tokio",

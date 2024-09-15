@@ -136,7 +136,7 @@ async fn parse_gtfs_realtime_entry(entry: &FeedEntity, db: &dyn Executor) -> Res
         }
     }
     if let Some(_vehicle_position) = entry.vehicle.as_ref() {}
-    if let Some(_alert) = entry.alert.as_ref() {}
+    if let Some(_alert) = entry._alert.as_ref() {}
     for (_num, _field) in entry.special_fields.unknown_fields().iter() {}
 
     Ok(())

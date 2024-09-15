@@ -48,6 +48,7 @@ async fn raptor_algorithm() -> anyhow::Result<()> {
 
     let db = &new_db_connection()?;
     let timetable = raptor::get_timetable(db, true).await?;
+    let transfers = raptor::generate_transfer_times(db).await?;
 
     let cases = [
         (18124, 18305, TimeTuple(10, 00, 00)),
@@ -61,7 +62,7 @@ async fn raptor_algorithm() -> anyhow::Result<()> {
         println!("Planning route between {dep_name} and {arr_name}");
 
         let result = raptor::run_raptor(
-            departure, arrival, departure_time, &timetable
+            departure, arrival, departure_time, &timetable, &transfers
         ).await?;
         match result {
             None => {println!("No result found...")}

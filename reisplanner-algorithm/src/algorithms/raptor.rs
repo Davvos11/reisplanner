@@ -9,8 +9,10 @@ use serde::{Deserialize, Serialize};
 use tracing::{debug, trace};
 use tracing::field::debug;
 use reisplanner_gtfs::gtfs::types::{Route, Trip};
-use crate::database::queries::{count_stop_times, get_parent_station_map, get_stop_times, get_trip_route_map};
+use reisplanner_iff::types::{StationTransfer};
+use crate::database::queries::{count_stop_times, get_parent_station_map, get_stop_times, get_transfer_times, get_trip_route_map};
 use crate::getters::{get_stop, get_stop_readable};
+use crate::types::JourneyPart;
 use crate::utils::{deserialize_from_disk, seconds_to_hms, serialize_to_disk};
 
 #[derive(Debug, Serialize, Deserialize, Clone, Eq, PartialEq)]
@@ -22,11 +24,11 @@ pub struct Location {
 
 #[derive(Debug, Serialize, Deserialize, Clone, Eq, PartialEq)]
 pub struct Connection {
-    departure_station: Location,
-    arrival_station: Location,
-    departure: u32,
-    arrival: u32,
-    trip_id: u32,
+    pub departure_station: Location,
+    pub arrival_station: Location,
+    pub departure: u32,
+    pub arrival: u32,
+    pub trip_id: u32,
 }
 
 impl Connection {
@@ -52,7 +54,7 @@ impl Connection {
 /// combined in the same routes.
 pub struct RRoute {
     stops: Vec<u32>,
-    connections: Vec<Vec<Connection>>, 
+    connections: Vec<Vec<Connection>>,
 }
 
 impl RRoute {
@@ -74,7 +76,7 @@ impl RRoute {
 
         panic!("Stops {p1} and {p2} not in this route")
     }
-    
+
     pub fn stops_from(&self, p: &u32) -> Vec<(usize, u32)> {
         // TODO try not to clone
         for (i, stop) in self.stops.iter().enumerate() {
@@ -82,10 +84,10 @@ impl RRoute {
                 return self.stops[i..].iter().cloned()
                     .zip(i..)
                     .map(|(item, i)| (i, item))
-                    .collect()
+                    .collect();
             }
         }
-        
+
         panic!("Stop {p} not in this route")
     }
 
@@ -107,7 +109,6 @@ impl RRoute {
 
                 right = mid - 1;
             }
-
         };
 
         ans
@@ -146,9 +147,9 @@ async fn generate_timetable(db: &RBatis) -> anyhow::Result<HashMap<u32, RRoute>>
 
                 // Use parent station for trip "identifier"
                 current_trip_stops.push(*dep_parent_station);
-                let connection = Connection{
-                    departure_station: Location {stop_id: dep_stop.stop_id, parent_id: *dep_parent_station},
-                    arrival_station: Location {stop_id: arr_stop.stop_id, parent_id: *arr_parent_station},
+                let connection = Connection {
+                    departure_station: Location { stop_id: dep_stop.stop_id, parent_id: *dep_parent_station },
+                    arrival_station: Location { stop_id: arr_stop.stop_id, parent_id: *arr_parent_station },
                     departure: dep_stop.departure_time.into(),
                     arrival: arr_stop.arrival_time.into(),
                     trip_id: dep_stop.trip_id,
@@ -187,12 +188,16 @@ async fn generate_timetable(db: &RBatis) -> anyhow::Result<HashMap<u32, RRoute>>
     // Change key type to be an integer
     let routes = routes.into_iter()
         .enumerate()
-        .map(|(i, (_, v))| {(i as u32, v)})
+        .map(|(i, (_, v))| { (i as u32, v) })
         .collect();
-    
+
     Ok(routes)
 }
 
+pub async fn generate_transfer_times(db: &RBatis) -> anyhow::Result<HashMap<u32, u32>> {
+    let transfers = get_transfer_times(db).await?;
+    Ok(transfers)
+}
 
 const TIMETABLE: &str = "raptor_timetable.blob";
 
@@ -216,12 +221,13 @@ pub async fn get_timetable(db: &RBatis, cache: bool) -> anyhow::Result<HashMap<u
 const MAX_K: usize = 5;
 const MAX_STATIONS: usize = 1000000;
 
-pub async fn run_raptor(
+pub async fn run_raptor<'a>(
     departure: u32,
     arrival: u32,
     departure_time: impl Into<u32>,
-    timetable: &HashMap<u32, RRoute>,
-) -> anyhow::Result<Option<Vec<(&Connection, &Connection)>>> {
+    timetable: &'a HashMap<u32, RRoute>,
+    transfers: &'a HashMap<u32, u32>,
+) -> anyhow::Result<Option<Vec<JourneyPart>>> {
     let departure_time = departure_time.into();
     let mut earliest_k_arrival: Vec<Vec<u32>> =
         vec![vec![u32::MAX - 3600 * 4; MAX_K + 1]; MAX_STATIONS];
@@ -277,17 +283,22 @@ pub async fn run_raptor(
                 let p_i = p_i as usize;
                 // Can the label be improved in this round?
                 if let Some(t) = t {
-                    if t[i-1].arrival < min(earliest_arrival[arrival as usize], earliest_arrival[p_i]) {
-                        earliest_k_arrival[p_i][k] = t[i-1].arrival;
-                        earliest_arrival[p_i] = t[i-1].arrival;
-                        prev[p_i] = Some((&t[t_from], &t[i-1], interchange[t[t_from].departure_station.parent_id as usize].unwrap()));
+                    if t[i - 1].arrival < min(earliest_arrival[arrival as usize], earliest_arrival[p_i]) {
+                        earliest_k_arrival[p_i][k] = t[i - 1].arrival;
+                        earliest_arrival[p_i] = t[i - 1].arrival;
+                        prev[p_i] = Some((&t[t_from], &t[i - 1], interchange[t[t_from].departure_station.parent_id as usize].unwrap()));
                         marked.insert(p_i as u32);
                     }
                 }
                 // Can we catch an earlier trip at p_i
-                if t.is_none() || earliest_k_arrival[p_i][k-1] < t.unwrap()[i].departure {
-                    t = route.trip_from(&(i as u32), &earliest_k_arrival[p_i][k-1]);
-                    interchange[p_i] = Some((p_i, p_i, 0)); // TODO
+                // TODO get non-parent station_id to get transfer time
+                // let transfer_time = transfers.get(&(p_i as u32)).ok_or(anyhow::Error::msg("Transfer time not found"))?;
+                let transfer_time = &120;
+                if t.is_none() ||
+                    earliest_k_arrival[p_i][k - 1] + transfer_time < t.unwrap()[i].departure
+                {
+                    t = route.trip_from(&(i as u32), &earliest_k_arrival[p_i][k - 1] + transfer_time);
+                    interchange[p_i] = Some((p_i, p_i, *transfer_time));
                     t_from = i;
                 }
             }
@@ -301,34 +312,30 @@ pub async fn run_raptor(
     }
 
     debug!("Finished Raptor path planning in {last_k} cycles");
-    
+
     let mut parts: Vec<_> = Vec::new();
     let mut cur = arrival as usize;
-    while let Some(tuple@(c1, c2, (p1, p2, dur))) = prev[cur] {
-        parts.push((c1, c2));
-        // parts.push(TripPart::Connection(c1, c2));
-        // parts.push(TripPart::Footpath(p1, p2, dur));
+    while let Some((c1, c2, (p1, p2, dur))) = prev[cur] {
+        parts.push(JourneyPart::Vehicle(c1.clone(), c2.clone()));
+        if p2 != 0 {
+            // TODO do better than 0 check
+            parts.push(JourneyPart::Transfer(p1, p2, dur)); 
+        }
         cur = c1.departure_station.parent_id as usize;
     }
-    
+
     parts.reverse();
 
-    if parts.is_empty(){
+    if parts.is_empty() {
         return Ok(None);
     }
 
     Ok(Some(parts))
 }
-pub async fn print_result(result: &[(&Connection, &Connection)], db: &impl Executor) -> anyhow::Result<()> {
-    for &(connection_a, connection_b) in result {
-        println!(
-            "{} @ {} - {} @ {} using {}",
-            connection_a.departure_name(db).await?,
-            seconds_to_hms(connection_a.departure),
-            connection_b.arrival_name(db).await?,
-            seconds_to_hms(connection_b.arrival),
-            connection_b.route_information(db).await?
-        );
+
+pub async fn print_result(result: &Vec<JourneyPart>, db: &impl Executor) -> anyhow::Result<()> {
+    for part in result {
+        println!("{}", part.to_string(db).await?);
     }
 
     Ok(())

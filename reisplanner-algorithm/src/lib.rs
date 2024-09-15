@@ -5,5 +5,5 @@ mod database;
 mod utils;
 mod getters;
 pub mod algorithms;
-
+mod types;
 // TODO remove allow(dead_code)

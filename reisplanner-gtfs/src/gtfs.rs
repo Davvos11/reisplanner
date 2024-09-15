@@ -250,7 +250,7 @@ async fn download_parse_gtfs(db: &RBatis) -> Result<(), GtfsError> {
     gtfs_to_db::<Trip>(&transaction, format!("{FOLDER}/trips.txt").as_str()).await?;
     gtfs_to_db::<Shape>(&transaction, format!("{FOLDER}/shapes.txt").as_str()).await?;
     gtfs_to_db::<StopTime>(&transaction, format!("{FOLDER}/stop_times.txt").as_str()).await?;
-    add_stop_time_ids(db).await?;
+    add_stop_time_ids(&transaction).await?;
 
     transaction.commit().await?;
 

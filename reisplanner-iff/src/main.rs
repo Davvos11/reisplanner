@@ -3,12 +3,11 @@ use anyhow::Context;
 use csv::{DeserializeRecordsIter, ReaderBuilder, Trim};
 use encoding_rs::WINDOWS_1252;
 use encoding_rs_io::DecodeReaderBytesBuilder;
-use rbatis::executor::Executor;
 use serde::{Deserialize, Serialize};
 use tracing::debug;
 use tracing_subscriber::EnvFilter;
 use crate::database::init_db;
-use crate::types::{ConnectionMode, ContConnection, Station, Transfer};
+use crate::types::{ConnectionMode, ContConnection, Station, StationTransfer};
 
 mod database;
 mod types;
@@ -33,33 +32,13 @@ async fn main() -> anyhow::Result<()> {
     let stations: Vec<Station> = parse_csv("iff/stations.dat").await
         .context("Parsing stations")?;
 
-    debug!("Processing transfers...");
-    let mut result = Vec::new();
-    // Process contconns
-    for connection in cont_connections {
-        result.push(Transfer {
-            stop_code_from: connection.from_station,
-            stop_code_to: Some(connection.to_station),
-            transfer_time: connection.transfer_time,
-            transfer_type: Some(connection.transfer_type),
-            transfer_description: Some(connection_modes.get(&connection.transfer_type).unwrap().con_mode.clone()),
-        })
-    }
-    
-    // Process stations
-    for station in stations {
-        result.push(Transfer {
-            stop_code_from: station.station_abr,
-            stop_code_to: None,
-            transfer_time: station.transfer_time,
-            transfer_type: None,
-            transfer_description: None,
-        })
-    }
+    // TODO use cont_connections as footpaths
     
     debug!("Updating database...");
-    Transfer::delete_all(&db).await?;
-    Transfer::insert_batch(&db, &result, 1000).await?;
+    let station_transfers: Vec<_> = 
+        stations.into_iter().map(StationTransfer::from).collect();
+    StationTransfer::delete_all(&db).await?;
+    StationTransfer::insert_batch(&db, &station_transfers, 1000).await?;
     
     Ok(())
 }

@@ -2,34 +2,25 @@ use rbatis::{crud, impl_delete};
 use serde::{Deserialize, Serialize};
 use crate::utils::bool_from_int;
 
-#[derive(Debug, Deserialize, Serialize, Clone)]
-pub struct Transfer {
+#[derive(Debug, Deserialize, Serialize, Clone, Default)]
+pub struct StationTransfer {
     /// Station the transfer is from
-    pub stop_code_from: String,
-    /// Station the transfer is to.
-    /// If None, this transfer time is valid for the whole `stop_code_from` station.
-    pub stop_code_to: Option<String>,
+    pub station_code: String,
     /// Transfer time in minutes
     pub transfer_time: u32,
-    pub transfer_type: Option<u32>,
-    /// Human-readable description of the transfer type
-    pub transfer_description: Option<String>,
 }
 
-impl Default for Transfer {
-    fn default() -> Self {
-        Transfer {
-            stop_code_from: Default::default(),
-            stop_code_to: Some(Default::default()),
-            transfer_time: Default::default(),
-            transfer_type: Some(Default::default()),
-            transfer_description: Some(Default::default()),
+impl From<Station> for StationTransfer {
+    fn from(value: Station) -> Self {
+        StationTransfer {
+            station_code: value.station_abr,
+            transfer_time: value.transfer_time,
         }
     }
 }
 
-crud!(Transfer {});
-impl_delete!(Transfer {delete_all() => "``"});
+crud!(StationTransfer {});
+impl_delete!(StationTransfer {delete_all() => "``"});
 
 /// Een overstapverbinding hoeft niet altijd binnen een station te liggen, maar kan ook op een (buurt)
 /// station liggen. Om de overstap te overbruggen kan het mogelijk zijn gebruik te maken van een

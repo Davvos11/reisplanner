@@ -2,7 +2,7 @@ use rbatis::RBatis;
 use rbatis::table_sync::SqliteTableMapper;
 use serde::Serialize;
 use tracing::{debug, instrument, trace};
-use crate::types::Transfer;
+use crate::types::StationTransfer;
 
 #[instrument]
 pub async fn init_db() -> anyhow::Result<RBatis> {
@@ -10,7 +10,7 @@ pub async fn init_db() -> anyhow::Result<RBatis> {
     let rb = new_db_connection()?;
     
     trace!("Setting up tables");
-    sync_table::<Transfer>(&rb, "transfer").await?;
+    sync_table::<StationTransfer>(&rb, "station_transfer").await?;
 
     Ok(rb)
 }
@@ -20,8 +20,7 @@ pub async fn add_indices(rb: &RBatis) -> anyhow::Result<Vec<String>> {
     debug!("Adding indices, this may take a while...");
 
     // Add indices
-    names.push(add_index(rb, "transfer", &["stop_code_from"]).await?);
-    names.push(add_index(rb, "transfer", &["stop_code_from", "stop_code_to"]).await?);
+    names.push(add_index(rb, "station_transfer", &["station_code"]).await?);
     
     Ok(names)
 }

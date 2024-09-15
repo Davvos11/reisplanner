@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 reisplanner-gtfs = { path = "../reisplanner-gtfs", package = "reisplanner-gtfs" }
+reisplanner-iff = { path = "../reisplanner-iff", package = "reisplanner-iff" }
 tokio = { version = "1.38.0", features = ["full"] }
 rbs = "4.5.18"
 rbatis = "4.5.29"
