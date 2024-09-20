@@ -26,13 +26,13 @@ async fn main() -> anyhow::Result<()> {
     debug!("Parsing IFF files...");
     let connection_modes: Vec<ConnectionMode> = parse_csv("iff/connmode.dat").await
         .context("Parsing connmode")?;
-    let connection_modes = vec_to_hashmap!(connection_modes, con_code);
-    let cont_connections: Vec<ContConnection> = parse_csv("iff/contconn.dat").await
+    let _connection_modes = vec_to_hashmap!(connection_modes, con_code);
+    let _cont_connections: Vec<ContConnection> = parse_csv("iff/contconn.dat").await
         .context("Parsing contconn")?;
     let stations: Vec<Station> = parse_csv("iff/stations.dat").await
         .context("Parsing stations")?;
 
-    // TODO use cont_connections as footpaths
+    // TODO use _cont_connections as footpaths
     
     debug!("Updating database...");
     let station_transfers: Vec<_> = 

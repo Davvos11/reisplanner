@@ -1,19 +1,17 @@
-use std::cmp::{min, Ordering};
-use std::collections::{BTreeSet, HashMap, HashSet};
-use std::hash::Hash;
-use std::process::exit;
+use crate::database::queries::{count_stop_times, get_parent_station_map, get_stop_times, get_transfer_times};
+use crate::getters::get_stop_readable;
+use crate::types::JourneyPart;
+use crate::utils::{deserialize_from_disk, serialize_to_disk};
 use indicatif::{ProgressBar, ProgressStyle};
 use rbatis::executor::Executor;
 use rbatis::RBatis;
-use serde::{Deserialize, Serialize};
-use tracing::{debug, trace};
-use tracing::field::debug;
 use reisplanner_gtfs::gtfs::types::{Route, Trip};
-use reisplanner_iff::types::{StationTransfer};
-use crate::database::queries::{count_stop_times, get_parent_station_map, get_stop_times, get_transfer_times, get_trip_route_map};
-use crate::getters::{get_stop, get_stop_readable};
-use crate::types::JourneyPart;
-use crate::utils::{deserialize_from_disk, seconds_to_hms, serialize_to_disk};
+use serde::{Deserialize, Serialize};
+use std::cmp::min;
+use std::collections::{HashMap, HashSet};
+use std::hash::Hash;
+use tracing::field::debug;
+use tracing::{debug, trace};
 
 #[derive(Debug, Serialize, Deserialize, Clone, Eq, PartialEq, Copy, Hash)]
 pub struct Location {
@@ -191,11 +189,9 @@ async fn generate_timetable(db: &RBatis) -> anyhow::Result<HashMap<u32, RRoute>>
 
         bar.inc(count as u64);
         if count != PAGE_SIZE as usize {
-            if let Some(last_stop) = stop_times.last() {
-                let route = routes.entry(current_trip_stops.clone())
-                    .or_insert(RRoute::new(current_trip_stops));
-                route.connections.push(current_trip_connections);
-            }
+            let route = routes.entry(current_trip_stops.clone())
+                .or_insert(RRoute::new(current_trip_stops));
+            route.connections.push(current_trip_connections);
             break;
         } else {
             highest_id = stop_times.last().unwrap().id.unwrap();
