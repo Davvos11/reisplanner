@@ -5,7 +5,7 @@ use crate::utils::{seconds_to_hms, seconds_to_ms};
 
 pub enum JourneyPart {
     Vehicle(Connection, Connection),
-    Transfer(usize, usize, u32),
+    Transfer(u32, u32, u32),
 }
 
 impl JourneyPart {
@@ -25,8 +25,8 @@ impl JourneyPart {
             JourneyPart::Transfer(from, to, duration) => {
                 Ok(
                     format!("Change from {} to {} ({} mins)",
-                            get_stop_readable(&(*from as u32), db).await?,
-                            get_stop_readable(&(*to as u32), db).await?,
+                            get_stop_readable(from, db).await?,
+                            get_stop_readable(to, db).await?,
                             seconds_to_ms(*duration),
                     )
                 )
