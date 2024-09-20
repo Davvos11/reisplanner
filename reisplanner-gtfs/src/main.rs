@@ -6,7 +6,8 @@ use tokio::time::{Duration as TokioDuration, sleep};
 use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
 use reisplanner_gtfs::gtfs::run_gtfs;
-use crate::database::{add_indices, drop_indices, init_db};
+use reisplanner_utils::database::drop_indices;
+use crate::database::{add_indices, init_db};
 use crate::gtfs_realtime_parse::run_gtfs_realtime;
 
 mod gtfs_realtime_parse;

@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+reisplanner-utils = { path = "../reisplanner-utils", package = "reisplanner-utils" }
 tokio = { version = "1.38.0", features = ["full"] }
 rbs = "4.5.18"
 rbatis = "4.5.29"
