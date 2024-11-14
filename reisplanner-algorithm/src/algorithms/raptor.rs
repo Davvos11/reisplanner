@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 use std::cmp::min;
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
+use anyhow::anyhow;
 use tracing::field::debug;
 use tracing::{debug, trace};
 
@@ -232,8 +233,7 @@ pub async fn get_timetable(db: &RBatis, cache: bool) -> anyhow::Result<HashMap<u
     }
 }
 
-// TODO fills RAM when > 3
-const MAX_K: usize = 3;
+const MAX_K: usize = 10;
 
 ///
 /// This code uses the following variable names that correspond with the
@@ -357,12 +357,22 @@ pub async fn run_raptor<'a>(
 
     let mut parts: Vec<_> = Vec::new();
     let mut cur = arrival_stop;
+    let mut seen = HashSet::new();
     while let Some(&(c1, c2, (p1, p2, dur))) = prev.get(&cur) {
         parts.push(JourneyPart::Vehicle(c1.clone(), c2.clone()));
         if dur > 0 {
             parts.push(JourneyPart::Transfer(p1, p2, dur));
         }
         cur = c1.departure_station.parent_id;
+
+        let previous_size = seen.len();
+        seen.insert(cur);
+        if seen.len() == previous_size {
+            let (stops, trips): (Vec<_>, Vec<_>) = parts.iter().filter_map(|p| {
+                if let JourneyPart::Vehicle(c1, _) = p { Some((c1.departure_station.stop_id, c1.trip_id)) } else { None }
+            }).collect();
+            return Err(anyhow!("Loop in route, stops found so far (backwards): {stops:?} using trips {trips:?}"));
+        }
     }
 
     parts.reverse();
