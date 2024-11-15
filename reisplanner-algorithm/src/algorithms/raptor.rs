@@ -233,7 +233,7 @@ pub async fn get_timetable(db: &RBatis, cache: bool) -> anyhow::Result<HashMap<u
     }
 }
 
-const MAX_K: usize = 10;
+const MAX_K: usize = 4;
 
 ///
 /// This code uses the following variable names that correspond with the
@@ -307,7 +307,7 @@ pub async fn run_raptor<'a>(
         for (marked_route, marked_stop) in routes_marked_stops.iter() {
             // t = the current trip
             let mut trip: Option<&Vec<Connection>> = None;
-            let mut previous_stop_index = 0;
+            let mut previous_stop_index = None;
 
             let route = timetable.get(marked_route)
                 .ok_or(anyhow::Error::msg("Route not found"))?;
@@ -320,14 +320,17 @@ pub async fn run_raptor<'a>(
                     let arrival_here = *earliest_arrival.get(&parent_stop_along_route).unwrap_or(&default_arrival);
                     let arrival_at_destination = *earliest_arrival.get(&arrival_stop).unwrap_or(&default_arrival);
 
-                    if trip[stop_index - 1].arrival < min(arrival_here.time, arrival_at_destination.time) {
-                        let arrival = Arrival { time: trip[stop_index - 1].arrival, stop_id: stop_along_route };
-                        earliest_k_arrival[k].insert(parent_stop_along_route, arrival);
-                        earliest_arrival.insert(parent_stop_along_route, arrival);
-                        let previous_stop = &trip[previous_stop_index].departure_station.stop_id;
-                        prev.insert(parent_stop_along_route,
-                                    (&trip[previous_stop_index], &trip[stop_index - 1], *interchange.get(previous_stop).unwrap()));
-                        marked.insert(parent_stop_along_route);
+                    if let Some(previous_stop_index) = previous_stop_index {
+                        if trip[stop_index - 1].arrival < min(arrival_here.time, arrival_at_destination.time) {
+                            let arrival = Arrival { time: trip[stop_index - 1].arrival, stop_id: stop_along_route };
+                            earliest_k_arrival[k].insert(parent_stop_along_route, arrival);
+                            earliest_arrival.insert(parent_stop_along_route, arrival);
+                            let connection: &Connection = &trip[previous_stop_index];
+                            let previous_stop = connection.departure_station.stop_id;
+                            prev.insert(parent_stop_along_route,
+                                        (&trip[previous_stop_index], &trip[stop_index - 1], *interchange.get(&previous_stop).unwrap()));
+                            marked.insert(parent_stop_along_route);
+                        }
                     }
                 }
 
@@ -341,12 +344,10 @@ pub async fn run_raptor<'a>(
                 if trip.is_none() || ept_time < trip.unwrap()[stop_index].departure {
                     trip = route.trip_from(&(stop_index as u32), &ept_time);
                     interchange.insert(stop_along_route, (earliest_possible_transfer.stop_id, stop_along_route, transfer_time));
-                    previous_stop_index = stop_index;
+                    previous_stop_index = Some(stop_index);
                 }
             }
         }
-
-        // Look at footpaths
 
         if marked.is_empty() {
             break;
