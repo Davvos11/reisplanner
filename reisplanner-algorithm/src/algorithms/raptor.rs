@@ -11,6 +11,7 @@ use reisplanner_gtfs::gtfs::types::{Route, Trip};
 use serde::{Deserialize, Serialize};
 use std::cmp::min;
 use std::collections::{HashMap, HashSet};
+use std::env;
 use std::hash::Hash;
 use tracing::field::debug;
 use tracing::{debug, error, trace, warn};
@@ -67,7 +68,7 @@ impl Arrival {
     pub fn new_transfer(time: u32, stop: Location, departure_time: u32, departure_stop: Location) -> Self {
         Self { time, stop, departure_stop: Some(departure_stop), departure_time: Some(departure_time), mode: Mode::Transfer }
     }
-    
+
     pub fn departure_station(time: u32, stop: Location) -> Self {
         Self { time, stop, departure_stop: None, departure_time: None, mode: NotApplicable }
     }
@@ -291,7 +292,7 @@ pub async fn run_raptor<'a>(
     // Another useful technique is local pruning. For each stop pi, we keep a value τ ∗(pi)
     // representing the earliest known arrival time at pi.
     let mut tau_star = tau_k[0].clone();
-    
+
     // Map to keep the found transfers to each trip/stop
     let mut transfers = HashMap::new();
 
@@ -417,7 +418,10 @@ pub async fn run_raptor<'a>(
                 }
             }
         }
-        // visualise_earliest_arrivals(&tau_star, arrival_stop, db).await?;
+        // TODO document this feature
+        if env::var("SHOW_DOTS").is_ok_and(|v|v == "1") {
+            visualise_earliest_arrivals(&tau_star, k, arrival_stop, db).await?;
+        }
 
         // If no new stops are marked, the route cannot be improved
         if marked.is_empty() { break; }
@@ -457,7 +461,7 @@ pub async fn run_raptor<'a>(
             // If there is no associated arrival, get the parent stop, for the "vehicle" connection
             if !tau_star.contains_key(&current_stop) {
                 current_stop = stop.parent_id;
-            } 
+            }
             let old_length = seen.len();
             seen.insert(current_stop);
             if old_length == seen.len() {

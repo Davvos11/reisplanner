@@ -18,5 +18,6 @@ indicatif = "0.17.8"
 serde = { version = "1.0.204", features = ["derive"] }
 bincode = "1.3.3"
 dot-writer = "0.1.4"
+chrono = "0.4.38"
 
 [dev-dependencies]

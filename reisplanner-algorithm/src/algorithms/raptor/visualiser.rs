@@ -4,9 +4,15 @@ use crate::utils::seconds_to_hms;
 use dot_writer::{Attributes, Color, DotWriter, Style};
 use rbatis::executor::Executor;
 use std::collections::HashMap;
+use std::fs;
+use std::fs::File;
+use std::io::Write;
+use std::process::Command;
+use chrono::Local;
 
 pub async fn visualise_earliest_arrivals(
     tau: &HashMap<u32, Arrival>,
+    k: usize,
     destination: u32,
     db: &impl Executor,
 ) -> anyhow::Result<()> {
@@ -35,8 +41,24 @@ pub async fn visualise_earliest_arrivals(
         digraph.node_named(format!("\"{destination_name}\""))
             .set_color(Color::PaleGreen).set_style(Style::Filled);
     }
-    let result = String::from_utf8(output_bytes)?;
-    println!("{}", result);
+    // Get the system's temporary directory
+    let mut temp_path = std::env::temp_dir();
+
+    // Append your custom folder and file name
+    temp_path.push("reisplanner");
+    let datetime_string = Local::now().format("%Y%m%d%H%M%S").to_string();
+    temp_path.push(format!("graph-{datetime_string}-k={k}.dot"));
+
+    // Ensure the directory exists
+    if let Some(parent) = temp_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+
+    // Write to the file
+    let mut file = File::create(&temp_path)?;
+    file.write_all(&output_bytes)?;
+
+    Command::new("xdot").arg(temp_path).arg("-f").arg("fdp").spawn()?;
 
     Ok(())
 }
