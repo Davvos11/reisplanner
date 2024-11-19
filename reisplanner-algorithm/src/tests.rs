@@ -54,8 +54,8 @@ async fn raptor_algorithm() -> anyhow::Result<()> {
         // (18124, 18305, TimeTuple(10, 00, 00)),
         (18124, 18004, TimeTuple(10, 00, 00)),
         (18124, 153150, TimeTuple(10, 00, 00)),
-        // (18124, 18195, TimeTuple(10, 00, 00)),
-        // (17843, 18029, TimeTuple(10, 00, 00)),
+        (18124, 18195, TimeTuple(10, 00, 00)),
+        (17843, 18029, TimeTuple(10, 00, 00)),
         // (17843, 449004, TimeTuple(10, 00, 00)),
     ];
 
@@ -67,10 +67,19 @@ async fn raptor_algorithm() -> anyhow::Result<()> {
         let result = raptor::run_raptor(
             departure, arrival, departure_time, &timetable, &transfers, db
         ).await;
+        // TODO proper test cases instead of assert!(false)
         match result {
-            Err(e) => {eprintln!("Error: {e}")}
-            Ok(None) => {println!("No result found...")}
-            Ok(Some(result)) => {raptor::print_result(&result, db).await?}
+            Err(e) => {
+                eprintln!("Error: {e}");
+                assert!(false);
+            }
+            Ok(None) => {
+                println!("No result found...");
+                assert!(false);
+            }
+            Ok(Some(result)) => {
+                raptor::print_result(&result, db).await?;
+            }
         }
         println!()
     }

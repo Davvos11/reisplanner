@@ -8,6 +8,8 @@ use reisplanner_gtfs::gtfs::types::{Route, Trip};
 pub enum JourneyPart {
     Station(Location),
     Vehicle(TripLeg),
+    // (from, to, duration)
+    Transfer(u32, u32, u32),
 }
 
 impl JourneyPart {
@@ -26,6 +28,11 @@ impl JourneyPart {
                 let route = Route::select_by_id(db, &trip.route_id).await?
                     .ok_or(anyhow::Error::msg("Cannot get route"))?;
                 Ok(format!("From {dep_name} at {dep_time} to {arr_name} at {arr_time} using {} {} {}", route.agency_id, route.route_short_name, route.route_long_name))
+            }
+            JourneyPart::Transfer(from, to, duration) => {
+                let from_name = get_stop_readable(from, db).await?;
+                let to_name = get_stop_readable(to, db).await?;
+                Ok(format!("Transfer from {from_name} to {to_name} ({} mins)", duration / 60))
             }
         }
     }

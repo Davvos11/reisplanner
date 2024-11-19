@@ -14,7 +14,7 @@ use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 use tracing::field::debug;
 use tracing::{debug, error, trace, warn};
-// use crate::algorithms::raptor::visualiser::visualise_earliest_arrivals;
+use crate::algorithms::raptor::Mode::NotApplicable;
 
 mod visualiser;
 
@@ -25,7 +25,7 @@ pub struct Location {
     pub parent_id: u32,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct TripLeg {
     pub from_stop: Location,
     pub to_stop: Location,
@@ -34,7 +34,7 @@ pub struct TripLeg {
     pub trip_id: u32,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, Eq, PartialEq, Copy)]
+#[derive(Debug, Clone, Eq, PartialEq, Copy)]
 pub struct Arrival {
     time: u32,
     stop: Location,
@@ -42,17 +42,34 @@ pub struct Arrival {
     /// These are only None when this is our departure station
     departure_stop: Option<Location>,
     departure_time: Option<u32>,
-    trip_id: Option<u32>,
+    mode: Mode,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Copy)]
+pub enum Mode {
+    NotApplicable,
+    Trip(u32),
+    Transfer,
+}
+
+
+#[derive(Debug, Clone, Eq, PartialEq, Copy)]
+pub struct Transfer {
+    pub from_stop: Location,
+    pub duration: u32,
 }
 
 impl Arrival {
-    pub fn new(time: u32, stop: Location, departure_stop: Location, departure_time: u32, route_id: u32) -> Self {
-        Self { time, stop, departure_stop: Some(departure_stop), departure_time: Some(departure_time), trip_id: Some(route_id) }
+    pub fn new_trip(time: u32, stop: Location, departure_time: u32, departure_stop: Location, trip_id: u32) -> Self {
+        Self { time, stop, departure_stop: Some(departure_stop), departure_time: Some(departure_time), mode: Mode::Trip(trip_id) }
     }
 
-
+    pub fn new_transfer(time: u32, stop: Location, departure_time: u32, departure_stop: Location) -> Self {
+        Self { time, stop, departure_stop: Some(departure_stop), departure_time: Some(departure_time), mode: Mode::Transfer }
+    }
+    
     pub fn departure_station(time: u32, stop: Location) -> Self {
-        Self { time, stop, departure_stop: None, departure_time: None, trip_id: None }
+        Self { time, stop, departure_stop: None, departure_time: None, mode: NotApplicable }
     }
 }
 
@@ -259,7 +276,7 @@ pub async fn run_raptor<'a>(
     arrival_stop: u32,
     departure_time: impl Into<u32>,
     timetable: &'a HashMap<u32, RRoute>,
-    transfers: &'a HashMap<u32, u32>,
+    transfer_times: &'a HashMap<u32, u32>,
     db: &impl Executor,
 ) -> anyhow::Result<Option<Vec<JourneyPart>>> {
     let departure_time = departure_time.into();
@@ -274,6 +291,9 @@ pub async fn run_raptor<'a>(
     // Another useful technique is local pruning. For each stop pi, we keep a value τ ∗(pi)
     // representing the earliest known arrival time at pi.
     let mut tau_star = tau_k[0].clone();
+    
+    // Map to keep the found transfers to each trip/stop
+    let mut transfers = HashMap::new();
 
     let mut marked = HashSet::new();
     marked.insert(departure_location);
@@ -346,7 +366,17 @@ pub async fn run_raptor<'a>(
                 // τk−1(pi) < τarr(t, pi) and update t by recomputing et(r, pi).
                 if let Some(possible_arrival) = tau_k[k - 1].get(&p_i.parent_id) {
                     if let Some(new_trip) = r.trip_from_station(p_i.parent_id, possible_arrival.time) {
-                        if t.is_none() || (i < t.unwrap().len() && possible_arrival.time < t.unwrap()[i].departure) {
+                        // Determine transfer information (if we are on a trip, so not for departure)
+                        let transfer_time = if t.is_some() {
+                            transfer_times.get(&p_i.stop_id).map(|t| t * 60)
+                        } else { None };
+                        if t.is_none() || (i < t.unwrap().len() && possible_arrival.time + transfer_time.unwrap() < t.unwrap()[i].departure) {
+                            if let Some(transfer_time) = transfer_time {
+                                // Save transfer here (using stop_id (= platform) instead of parent_id)
+                                // Note: possible_arrival = the arrival from the trip using which we  are here earliest.
+                                //  and: new_trip[0] = the connection which we are transferring to
+                                transfers.insert(possible_arrival.stop.parent_id, Transfer{duration: transfer_time, from_stop: possible_arrival.stop});
+                            }
                             t = Some(new_trip);
                         }
                     }
@@ -367,9 +397,17 @@ pub async fn run_raptor<'a>(
                         let earliest_at_arr = tau_star.get(&arrival_stop)
                             .map(|a| a.time).unwrap_or(u32::MAX);
                         if connection.arrival < min(earliest_at_pj, earliest_at_arr) {
-                            let arrival = Arrival::new(
+                            if let Some(transfer) = transfers.get(&p_h.parent_id) {
+                                let transfer_arrival = Arrival::new_transfer(
+                                    departure + transfer.duration, *p_h,
+                                    departure, transfer.from_stop,
+                                );
+                                tau_k[k].insert(p_h.stop_id, transfer_arrival);
+                                tau_star.insert(p_h.stop_id, transfer_arrival);
+                            }
+                            let arrival = Arrival::new_trip(
                                 connection.arrival, p_j,
-                                *p_h, departure, connection.trip_id,
+                                departure, *p_h, connection.trip_id,
                             );
                             tau_k[k].insert(p_j.parent_id, arrival);
                             tau_star.insert(p_j.parent_id, arrival);
@@ -379,7 +417,7 @@ pub async fn run_raptor<'a>(
                 }
             }
         }
-        visualise_earliest_arrivals(&tau_star, arrival_stop, db).await?;
+        // visualise_earliest_arrivals(&tau_star, arrival_stop, db).await?;
 
         // If no new stops are marked, the route cannot be improved
         if marked.is_empty() { break; }
@@ -388,21 +426,44 @@ pub async fn run_raptor<'a>(
     // Construct the path, starting at the arrival
     let mut path = Vec::new();
     let mut current_stop = arrival_stop;
+    let mut seen = HashSet::new();
     while let Some(arrival) = tau_star.get(&current_stop) {
-        path.push(JourneyPart::Station(arrival.stop));
-        if arrival.departure_stop.is_some() {
-            // Assume that departure and trip_id are also some, if departure_stop is some
-            let leg = TripLeg {
-                from_stop: arrival.departure_stop.unwrap(),
-                to_stop: arrival.stop,
-                departure: arrival.departure_time.unwrap(),
-                arrival: arrival.time,
-                trip_id: arrival.trip_id.unwrap(),
-            };
-            path.push(JourneyPart::Vehicle(leg));
+        // path.push(JourneyPart::Station(arrival.stop));
+        match arrival.mode {
+            Mode::Trip(trip_id) => {
+                // Assume that departure_stop and departure_time are Some, if mode is Trip
+                let leg = TripLeg {
+                    from_stop: arrival.departure_stop.unwrap(),
+                    to_stop: arrival.stop,
+                    departure: arrival.departure_time.unwrap(),
+                    arrival: arrival.time,
+                    trip_id,
+                };
+                path.push(JourneyPart::Vehicle(leg));
+            }
+            Mode::Transfer => {
+                // Assume that departure_stop and departure_time are Some, if mode is Transfer
+                path.push(JourneyPart::Transfer(
+                    arrival.departure_stop.unwrap().stop_id,
+                    arrival.stop.stop_id,
+                    arrival.time - arrival.departure_time.unwrap(),
+                ));
+            }
+            NotApplicable => {}
         }
         if let Some(stop) = arrival.departure_stop {
-            current_stop = stop.parent_id;
+            // First try stop_id to find the "transfer" connection
+            current_stop = stop.stop_id;
+            // If there is no associated arrival, get the parent stop, for the "vehicle" connection
+            if !tau_star.contains_key(&current_stop) {
+                current_stop = stop.parent_id;
+            } 
+            let old_length = seen.len();
+            seen.insert(current_stop);
+            if old_length == seen.len() {
+                error!("Found loop in path construction");
+                break;
+            }
         } else {
             if arrival.stop.parent_id != departure_stop {
                 error!("Incorrect departure stop")
