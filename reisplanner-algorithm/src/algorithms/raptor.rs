@@ -1,7 +1,9 @@
+use crate::algorithms::raptor::visualiser::visualise_earliest_arrivals;
 use crate::database::queries::{count_stop_times, get_parent_station_map, get_stop_times, get_transfer_times};
 use crate::getters::get_stop_readable;
 use crate::types::JourneyPart;
-use crate::utils::{deserialize_from_disk, serialize_to_disk};
+use crate::utils::{deserialize_from_disk, seconds_to_hms, serialize_to_disk};
+use anyhow::anyhow;
 use indicatif::{ProgressBar, ProgressStyle};
 use rbatis::executor::Executor;
 use rbatis::RBatis;
@@ -10,27 +12,47 @@ use serde::{Deserialize, Serialize};
 use std::cmp::min;
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
-use anyhow::anyhow;
 use tracing::field::debug;
-use tracing::{debug, trace};
+use tracing::{debug, error, trace, warn};
+// use crate::algorithms::raptor::visualiser::visualise_earliest_arrivals;
+
+mod visualiser;
 
 #[derive(Debug, Serialize, Deserialize, Clone, Eq, PartialEq, Copy, Hash)]
 pub struct Location {
-    stop_id: u32,
+    pub stop_id: u32,
     /// Parent stop_id but without the `stopearea:` prefix
-    parent_id: u32,
+    pub parent_id: u32,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone, Eq, PartialEq, Hash)]
+pub struct TripLeg {
+    pub from_stop: Location,
+    pub to_stop: Location,
+    pub departure: u32,
+    pub arrival: u32,
+    pub trip_id: u32,
+}
 
 #[derive(Debug, Serialize, Deserialize, Clone, Eq, PartialEq, Copy)]
 pub struct Arrival {
     time: u32,
-    stop_id: u32,
+    stop: Location,
+    /// The stop where we boarded on the trip to get here
+    /// These are only None when this is our departure station
+    departure_stop: Option<Location>,
+    departure_time: Option<u32>,
+    trip_id: Option<u32>,
 }
 
-impl Default for Arrival {
-    fn default() -> Self {
-        Self { time: u32::MAX - 3600, stop_id: 0 }
+impl Arrival {
+    pub fn new(time: u32, stop: Location, departure_stop: Location, departure_time: u32, route_id: u32) -> Self {
+        Self { time, stop, departure_stop: Some(departure_stop), departure_time: Some(departure_time), trip_id: Some(route_id) }
+    }
+
+
+    pub fn departure_station(time: u32, stop: Location) -> Self {
+        Self { time, stop, departure_stop: None, departure_time: None, trip_id: None }
     }
 }
 
@@ -77,11 +99,11 @@ impl RRoute {
         }
     }
 
-    pub fn is_before(&self, p1: &u32, p2: &u32) -> bool {
+    pub fn is_before(&self, p1: u32, p2: u32) -> bool {
         for stop in &self.stops {
-            if stop.parent_id == *p1 {
+            if stop.parent_id == p1 {
                 return true;
-            } else if stop.parent_id == *p2 {
+            } else if stop.parent_id == p2 {
                 return false;
             }
         }
@@ -103,27 +125,23 @@ impl RRoute {
         panic!("Stop {p} not in this route")
     }
 
-    pub fn trip_from(&self, stop_index: &u32, start_time: &u32) -> Option<&Vec<Connection>> {
-        let mut left: usize = 0;
-        let mut right: usize = self.connections.len() - 1;
-        let mut ans = None;
-        while left <= right {
-            let mid = (left + right) / 2;
+    pub fn trip_from_station(&self, parent_id: u32, start_time: u32) -> Option<&[Connection]> {
+        let index = self.stops.iter().enumerate()
+            .find(|&(_, stop)| stop.parent_id == parent_id)
+            .map(|(i, _)| i)
+            .expect(&format!("Stop {parent_id} not in this route"));
 
-            if &self.connections[mid][*stop_index as usize].departure < start_time {
-                left = mid + 1;
-            } else {
-                ans = Some(&self.connections[mid]);
+        self.trip_from(index, start_time)
+    }
 
-                if mid == 0 {
-                    break;
-                }
-
-                right = mid - 1;
+    pub fn trip_from(&self, stop_index: usize, start_time: u32) -> Option<&[Connection]> {
+        for trips in &self.connections {
+            if trips[stop_index].departure >= start_time {
+                return Some(&trips[stop_index..]);
             }
-        };
+        }
 
-        ans
+        None
     }
 
     pub fn contains_station(&self, stop_id: &u32) -> bool {
@@ -157,26 +175,26 @@ async fn generate_timetable(db: &RBatis) -> anyhow::Result<HashMap<u32, RRoute>>
 
         for window in stop_connections {
             if let [dep_stop, arr_stop] = window {
-                let dep_parent_station = parent_stations.get(&dep_stop.stop_id)
-                    .ok_or(anyhow::Error::msg("Parent station not found"))?;
-                let arr_parent_station = parent_stations.get(&arr_stop.stop_id)
-                    .ok_or(anyhow::Error::msg("Parent station not found"))?;
+                if dep_stop.trip_id == arr_stop.trip_id {
+                    let dep_parent_station = parent_stations.get(&dep_stop.stop_id)
+                        .ok_or(anyhow::Error::msg("Parent station not found"))?;
+                    let arr_parent_station = parent_stations.get(&arr_stop.stop_id)
+                        .ok_or(anyhow::Error::msg("Parent station not found"))?;
 
-                // Use parent station for trip "identifier"
-                current_trip_stops.push(Location { stop_id: dep_stop.stop_id, parent_id: *dep_parent_station });
-                let connection = Connection {
-                    departure_station: Location { stop_id: dep_stop.stop_id, parent_id: *dep_parent_station },
-                    arrival_station: Location { stop_id: arr_stop.stop_id, parent_id: *arr_parent_station },
-                    departure: dep_stop.departure_time.into(),
-                    arrival: arr_stop.arrival_time.into(),
-                    trip_id: dep_stop.trip_id,
-                };
-                current_trip_connections.push(connection);
-
-                // Reset temporary storages and write values to result
-                // This if statement does not trigger at the very last iteration
-                // That's why we also write this at count != PAGE_SIZE below.
-                if dep_stop.trip_id != arr_stop.trip_id {
+                    // Use parent station for trip "identifier"
+                    current_trip_stops.push(Location { stop_id: dep_stop.stop_id, parent_id: *dep_parent_station });
+                    let connection = Connection {
+                        departure_station: Location { stop_id: dep_stop.stop_id, parent_id: *dep_parent_station },
+                        arrival_station: Location { stop_id: arr_stop.stop_id, parent_id: *arr_parent_station },
+                        departure: dep_stop.departure_time.into(),
+                        arrival: arr_stop.arrival_time.into(),
+                        trip_id: dep_stop.trip_id,
+                    };
+                    current_trip_connections.push(connection);
+                } else {
+                    // Reset temporary storages and write values to result
+                    // This if statement does not trigger at the very last iteration
+                    // That's why we also write this at count != PAGE_SIZE below.
                     // TODO clone
                     let route = routes.entry(current_trip_stops.clone())
                         .or_insert(RRoute::new(current_trip_stops));
@@ -233,156 +251,169 @@ pub async fn get_timetable(db: &RBatis, cache: bool) -> anyhow::Result<HashMap<u
     }
 }
 
-const MAX_K: usize = 4;
+const MAX_K: usize = 8;
 
-///
-/// This code uses the following variable names that correspond with the
-/// variables in Algorithm 1 in the Raptor paper:
-/// Initialisation and lists:
-///     departure_stop = p_s
-///     arrival_stop = p_t
-///     earliest_arrival = tau^*
-///     earliest_k_arrival = tau^i
-/// First step:
-///     marked_stop = p
-///     other_stop = p'
-///     routes_marked_stops = Q
-///     route (or route_id) = r
-/// Second step:
-///     marked_stop = p
-///     stop_along_route = p_i
-///     routes_marked_stops = Q
-///     marked_route = r
-///     trip = t
+/// Source: https://www.microsoft.com/en-us/research/wp-content/uploads/2012/01/raptor_alenex.pdf
 pub async fn run_raptor<'a>(
     departure_stop: u32,
     arrival_stop: u32,
     departure_time: impl Into<u32>,
     timetable: &'a HashMap<u32, RRoute>,
     transfers: &'a HashMap<u32, u32>,
+    db: &impl Executor,
 ) -> anyhow::Result<Option<Vec<JourneyPart>>> {
     let departure_time = departure_time.into();
-    let mut earliest_k_arrival =
-        vec![HashMap::new(); MAX_K + 1];
-    earliest_k_arrival[0].insert(departure_stop, Arrival { time: departure_time, stop_id: 0 });
+    let departure_location = Location { stop_id: departure_stop, parent_id: departure_stop };
 
-    let mut earliest_arrival = HashMap::new();
-    earliest_arrival.insert(departure_stop, Arrival { time: departure_time, stop_id: 0 });
-
-    let mut interchange: HashMap<u32, (u32, u32, u32)> = HashMap::new();
-    let mut prev = HashMap::new();
+    // The algorithm associates with each stop p a multilabel (τ0(p), τ1(p), ..  , τK (p)),
+    // where τi(p) represents the earliest known arrival time at p with/ up to i trips.
+    // All values in all labels are initialized to ∞.
+    let mut tau_k = vec![HashMap::new(); MAX_K + 1];
+    // We then set τ0(ps) = τ .
+    tau_k[0].insert(departure_stop, Arrival::departure_station(departure_time, departure_location));
+    // Another useful technique is local pruning. For each stop pi, we keep a value τ ∗(pi)
+    // representing the earliest known arrival time at pi.
+    let mut tau_star = tau_k[0].clone();
 
     let mut marked = HashSet::new();
-    marked.insert(departure_stop);
+    marked.insert(departure_location);
 
-    let default_arrival = Arrival::default();
-
-    // Main loop:
-    let mut last_k = 0;
     for k in 1..=MAX_K {
-        last_k = k;
-        trace!("{k}th raptor loop...");
-        // Accumulate routes serving marked stops from previous round
-        let mut routes_marked_stops: HashMap<u32, u32> = HashMap::new();
+        // The first stage of round k sets τk(p) = τk−1(p) for all stops p:
+        // this sets an upper bound on the earliest arrival time at p with at most k trips.
+        // Note that local pruning allows us to drop the first stage (copying the labels
+        // from the previous round), since τ ∗(pi) automatically keeps track of the earliest
+        // possible time to get to pi.
 
-        for marked_stop in &marked {
-            // For each route r serving p:
-            for (route_id, route) in timetable {
-                if !route.contains_station(marked_stop) {
+        // [Section 3:]
+        // The second stage then processes each route in the timetable exactly once.
+        // Consider a route r, and let T(r) = (t0, t1, ... , t|T (r)|−1) be the sequence
+        // of trips that follow route r, from earliest to latest.
+        // When processing route r, we consider journeys where the last (k’th) trip taken
+        // is in route r.
+        // [Section 3.1:]
+        // More precisely, during round k, it suffices to traverse only routes that
+        // contain at least one stop reached with exactly k − 1 trips.
+        // To implement this improved version of the algorithm, we mark during round k − 1
+        // those stops pi for which we improved the arrival time τk−1(pi). At the beginning
+        // of round k, we loop through all marked stops to find all routes that contain them.
+        // Only routes from the resulting set Q are considered for scanning in round k.
+        let mut q: HashMap<u32, Location> = HashMap::new();
+        for p in &marked {
+            for (&route_id, r) in timetable {
+                if !r.contains_station(&p.parent_id) {
                     continue;
                 }
-                if let Some(other_stop) = routes_marked_stops.get(route_id) {
-                    if !route.is_before(marked_stop, other_stop) {
-                        continue;
+
+                // Moreover, since the marked stops are exactly those where we potentially
+                // “hop on” a trip in round k, we only have to traverse a route beginning
+                // at the earliest marked stop it contains. To enable this, while adding
+                // routes to Q, we also remember the earliest marked stop in each route.
+                // See also Figure 1.
+
+                // if (r, p′) ∈ Q for some stop p′ then
+                if let Some(&p_prime) = q.get(&route_id) {
+                    // Substitute (r, p′) by (r, p) in Q if p comes before p′ in r
+                    if r.is_before(p.parent_id, p_prime.parent_id) {
+                        q.insert(route_id, p_prime);
                     }
+                } else {
+                    // Add (r, p) to Q
+                    q.insert(route_id, *p);
                 }
-                // If (r, p') in Q: replace it with (r, p) if p comes before p'
-                // If (r, p') not in Q, add (r, p) to Q
-                routes_marked_stops.insert(*route_id, *marked_stop);
             }
         }
-        marked.clear();
 
-        // Traverse each route in Q
-        for (marked_route, marked_stop) in routes_marked_stops.iter() {
-            // t = the current trip
-            let mut trip: Option<&Vec<Connection>> = None;
-            let mut previous_stop_index = None;
+        // unmark p, for each marked stop p
+        marked = HashSet::new();
 
-            let route = timetable.get(marked_route)
-                .ok_or(anyhow::Error::msg("Route not found"))?;
-            // For each stop p_i of r beginning with p
-            for (stop_index, location_along_route) in route.stops_from(marked_stop) {
-                let stop_along_route = location_along_route.stop_id;
-                let parent_stop_along_route = location_along_route.parent_id;
-                // Can the label be improved in this round?
-                if let Some(trip) = trip {
-                    let arrival_here = *earliest_arrival.get(&parent_stop_along_route).unwrap_or(&default_arrival);
-                    let arrival_at_destination = *earliest_arrival.get(&arrival_stop).unwrap_or(&default_arrival);
+        for (route_id, p) in q {
+            let r = timetable.get(&route_id).expect("Route id from Q should be in timetable");
 
-                    if let Some(previous_stop_index) = previous_stop_index {
-                        if trip[stop_index - 1].arrival < min(arrival_here.time, arrival_at_destination.time) {
-                            let arrival = Arrival { time: trip[stop_index - 1].arrival, stop_id: stop_along_route };
-                            earliest_k_arrival[k].insert(parent_stop_along_route, arrival);
-                            earliest_arrival.insert(parent_stop_along_route, arrival);
-                            let connection: &Connection = &trip[previous_stop_index];
-                            let previous_stop = connection.departure_station.stop_id;
-                            prev.insert(parent_stop_along_route,
-                                        (&trip[previous_stop_index], &trip[stop_index - 1], *interchange.get(&previous_stop).unwrap()));
-                            marked.insert(parent_stop_along_route);
+            // t ← ⊥ // the current trip
+            let mut t: Option<&[Connection]> = None;
+
+            for (i, p_i) in r.stops.iter().enumerate() {
+                // Let et(r, pi) be the earliest trip in route r that one can catch at stop pi,
+                // i. e., the earliest trip t such that τdep(t, pi) ≥ τk−1(pi).
+                // (Note that this trip may not exist, in which case et(r, pi) is undefined.)
+                // To process the route, we visit its stops in order until we find a stop pi
+                // such that et(r, pi) is defined
+                // Moreover, we may need to update the current trip for k:
+                // at each stop pi along r it may be possible to catch an
+                // earlier trip (because a quicker path to pi has been found
+                // in a previous round). Thus, we have to check if
+                // τk−1(pi) < τarr(t, pi) and update t by recomputing et(r, pi).
+                if let Some(possible_arrival) = tau_k[k - 1].get(&p_i.parent_id) {
+                    if let Some(new_trip) = r.trip_from_station(p_i.parent_id, possible_arrival.time) {
+                        if t.is_none() || (i < t.unwrap().len() && possible_arrival.time < t.unwrap()[i].departure) {
+                            t = Some(new_trip);
                         }
                     }
                 }
+                // Can the label be improved in this round? Includes local and target pruning
+                // For each subsequent stop pj, we can update τk(pj) using
+                // this trip. To reconstruct the journey, we set a parent
+                // pointer to the stop at which t was boarded.
+                if let Some(t) = t {
+                    // p_h = the stop at which we "hop on" the trip
+                    let p_h = &t[0].departure_station;
+                    let departure = t[0].departure;
 
-                // Can we catch an earlier trip at p_i
-                let transfer_time = if parent_stop_along_route == departure_stop { 0 } else {
-                    60 * transfers.get(&stop_along_route)
-                        .ok_or(anyhow::Error::msg("Transfer time not found"))?
-                };
-                let earliest_possible_transfer = earliest_k_arrival[k - 1].get(&parent_stop_along_route).unwrap_or(&default_arrival);
-                let ept_time = earliest_possible_transfer.time + transfer_time;
-                if trip.is_none() || ept_time < trip.unwrap()[stop_index].departure {
-                    trip = route.trip_from(&(stop_index as u32), &ept_time);
-                    interchange.insert(stop_along_route, (earliest_possible_transfer.stop_id, stop_along_route, transfer_time));
-                    previous_stop_index = Some(stop_index);
+                    if let Some(connection) = t.get(i) {
+                        let p_j = connection.arrival_station;
+                        let earliest_at_pj = tau_star.get(&p_j.parent_id)
+                            .map(|a| a.time).unwrap_or(u32::MAX);
+                        let earliest_at_arr = tau_star.get(&arrival_stop)
+                            .map(|a| a.time).unwrap_or(u32::MAX);
+                        if connection.arrival < min(earliest_at_pj, earliest_at_arr) {
+                            let arrival = Arrival::new(
+                                connection.arrival, p_j,
+                                *p_h, departure, connection.trip_id,
+                            );
+                            tau_k[k].insert(p_j.parent_id, arrival);
+                            tau_star.insert(p_j.parent_id, arrival);
+                            marked.insert(p_j);
+                        }
+                    }
                 }
             }
         }
+        visualise_earliest_arrivals(&tau_star, arrival_stop, db).await?;
 
-        if marked.is_empty() {
+        // If no new stops are marked, the route cannot be improved
+        if marked.is_empty() { break; }
+    }
+
+    // Construct the path, starting at the arrival
+    let mut path = Vec::new();
+    let mut current_stop = arrival_stop;
+    while let Some(arrival) = tau_star.get(&current_stop) {
+        path.push(JourneyPart::Station(arrival.stop));
+        if arrival.departure_stop.is_some() {
+            // Assume that departure and trip_id are also some, if departure_stop is some
+            let leg = TripLeg {
+                from_stop: arrival.departure_stop.unwrap(),
+                to_stop: arrival.stop,
+                departure: arrival.departure_time.unwrap(),
+                arrival: arrival.time,
+                trip_id: arrival.trip_id.unwrap(),
+            };
+            path.push(JourneyPart::Vehicle(leg));
+        }
+        if let Some(stop) = arrival.departure_stop {
+            current_stop = stop.parent_id;
+        } else {
+            if arrival.stop.parent_id != departure_stop {
+                error!("Incorrect departure stop")
+            }
             break;
         }
     }
 
-    debug!("Finished Raptor path planning in {last_k} cycles");
+    path.reverse();
 
-    let mut parts: Vec<_> = Vec::new();
-    let mut cur = arrival_stop;
-    let mut seen = HashSet::new();
-    while let Some(&(c1, c2, (p1, p2, dur))) = prev.get(&cur) {
-        parts.push(JourneyPart::Vehicle(c1.clone(), c2.clone()));
-        if dur > 0 {
-            parts.push(JourneyPart::Transfer(p1, p2, dur));
-        }
-        cur = c1.departure_station.parent_id;
-
-        let previous_size = seen.len();
-        seen.insert(cur);
-        if seen.len() == previous_size {
-            let (stops, trips): (Vec<_>, Vec<_>) = parts.iter().filter_map(|p| {
-                if let JourneyPart::Vehicle(c1, _) = p { Some((c1.departure_station.stop_id, c1.trip_id)) } else { None }
-            }).collect();
-            return Err(anyhow!("Loop in route, stops found so far (backwards): {stops:?} using trips {trips:?}"));
-        }
-    }
-
-    parts.reverse();
-
-    if parts.is_empty() {
-        return Ok(None);
-    }
-
-    Ok(Some(parts))
+    Ok(Some(path))
 }
 
 pub async fn print_result(result: &Vec<JourneyPart>, db: &impl Executor) -> anyhow::Result<()> {

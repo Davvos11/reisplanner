@@ -51,11 +51,12 @@ async fn raptor_algorithm() -> anyhow::Result<()> {
     let transfers = raptor::generate_transfer_times(db).await?;
 
     let cases = [
-        (18124, 18305, TimeTuple(10, 00, 00)),
+        // (18124, 18305, TimeTuple(10, 00, 00)),
         (18124, 18004, TimeTuple(10, 00, 00)),
-        (18124, 18195, TimeTuple(10, 00, 00)),
-        (17843, 18029, TimeTuple(10, 00, 00)),
-        (17843, 449004, TimeTuple(10, 00, 00)),
+        (18124, 153150, TimeTuple(10, 00, 00)),
+        // (18124, 18195, TimeTuple(10, 00, 00)),
+        // (17843, 18029, TimeTuple(10, 00, 00)),
+        // (17843, 449004, TimeTuple(10, 00, 00)),
     ];
 
     for (departure, arrival, departure_time) in cases {
@@ -64,7 +65,7 @@ async fn raptor_algorithm() -> anyhow::Result<()> {
         println!("Planning route between {dep_name} and {arr_name}");
 
         let result = raptor::run_raptor(
-            departure, arrival, departure_time, &timetable, &transfers
+            departure, arrival, departure_time, &timetable, &transfers, db
         ).await;
         match result {
             Err(e) => {eprintln!("Error: {e}")}
