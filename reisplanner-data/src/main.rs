@@ -7,11 +7,18 @@ use serde::{Deserialize, Serialize};
 use tracing::debug;
 use tracing_subscriber::EnvFilter;
 use crate::database::init_db;
+use crate::download::download_zip;
 use crate::types::{ConnectionMode, ContConnection, Station, StationTransfer};
 
 mod database;
 mod types;
 mod utils;
+mod download;
+
+const IFF_URL: &str = "https://data.ndovloket.nl/iff/ns-latest.zip";
+const IFF_FOLDER: &str = "reisplanner-data/iff";
+const HALTES_URL: &str = "https://data.ndovloket.nl/haltes/ExportCHB20241121013144.xml.gz";
+const HALTES_FOLDER: &str = "reisplanner-data/haltes";
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -21,15 +28,16 @@ async fn main() -> anyhow::Result<()> {
     
     let db = init_db().await?;
     
-    // TODO download and unzip
+    let files = download_zip(IFF_URL, IFF_FOLDER).await?;
+    // TODO check if the correct files are present
 
     debug!("Parsing IFF files...");
-    let connection_modes: Vec<ConnectionMode> = parse_csv("iff/connmode.dat").await
+    let connection_modes: Vec<ConnectionMode> = parse_csv(&format!("{IFF_FOLDER}/connmode.dat")).await
         .context("Parsing connmode")?;
     let _connection_modes = vec_to_hashmap!(connection_modes, con_code);
-    let _cont_connections: Vec<ContConnection> = parse_csv("iff/contconn.dat").await
+    let _cont_connections: Vec<ContConnection> = parse_csv(&format!("{IFF_FOLDER}/contconn.dat")).await
         .context("Parsing contconn")?;
-    let stations: Vec<Station> = parse_csv("iff/stations.dat").await
+    let stations: Vec<Station> = parse_csv(&format!("{IFF_FOLDER}/stations.dat")).await
         .context("Parsing stations")?;
 
     // TODO use _cont_connections as footpaths

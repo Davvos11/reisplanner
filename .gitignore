@@ -133,3 +133,5 @@ sqlite*
 *.pb
 reisplanner-gtfs/gtfs
 /reisplanner-algorithm/*timetable*.blob
+reisplanner-data/iff
+reisplanner-data/haltes
