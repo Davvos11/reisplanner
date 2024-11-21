@@ -1845,10 +1845,29 @@ dependencies = [
  "rbatis",
  "rbdc-sqlite",
  "rbs",
+ "reisplanner-data",
  "reisplanner-gtfs",
- "reisplanner-iff",
  "serde",
  "thiserror",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "reisplanner-data"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "csv",
+ "encoding_rs",
+ "encoding_rs_io",
+ "indicatif",
+ "rbatis",
+ "rbdc-sqlite",
+ "rbs",
+ "reisplanner-utils",
+ "serde",
  "tokio",
  "tracing",
  "tracing-subscriber",
@@ -1881,25 +1900,6 @@ dependencies = [
  "tracing-subscriber",
  "vergen",
  "zip",
-]
-
-[[package]]
-name = "reisplanner-iff"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "csv",
- "encoding_rs",
- "encoding_rs_io",
- "indicatif",
- "rbatis",
- "rbdc-sqlite",
- "rbs",
- "reisplanner-utils",
- "serde",
- "tokio",
- "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]

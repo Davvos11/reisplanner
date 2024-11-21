@@ -1,4 +1,4 @@
 [workspace]
 resolver = "2"
 
-members = ["reisplanner-algorithm", "reisplanner-gtfs", "reisplanner-iff", "reisplanner-utils"]
+members = ["reisplanner-algorithm", "reisplanner-gtfs", "reisplanner-data", "reisplanner-utils"]
