@@ -85,7 +85,7 @@ async fn has_updated(url: &str, file_path: &str) -> Result<bool, DownloadError> 
                     metadata = first_file.metadata()
                         .map_err(|e| ParseLocalModified(e.into()))?;
                 } else {
-                    return Ok(false);
+                    return Ok(true);
                 }
             }
             let local_modified_time = metadata.modified()
