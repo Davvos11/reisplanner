@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 reisplanner-utils = { path = "../reisplanner-utils", package = "reisplanner-utils" }
+reisplanner-gtfs = { path = "../reisplanner-gtfs", package = "reisplanner-gtfs" }
 tokio = { version = "1.38.0", features = ["full"] }
 rbs = "4.5.18"
 rbatis = "4.5.29"
@@ -21,3 +22,6 @@ reqwest = "0.12.9"
 zip = "2.2.0"
 thiserror = "1.0.63"
 httpdate = "1.0.3"
+flate2 = "1.0.35"
+quick-xml = { version = "0.37.1", features = ["serialize"]}
+regex = "1.10.5"

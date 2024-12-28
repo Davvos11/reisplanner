@@ -194,6 +194,15 @@ impl_select!(Stop {
     select_by_id_str(stop_id: &String) -> Option => "`where stop_id = #{stop_id}`"
 });
 
+
+impl_select!(Stop {
+    select_by_zone_id(zone_id: &String) -> Vec => "`where zone_id = #{zone_id}`"
+});
+
+impl_select!(Stop {
+    select_by_code(stop_code: &String) -> Vec => "`where stop_code = #{stop_code}`"
+});
+
 #[derive(Deserialize_repr, Serialize_repr, Default, PartialEq, Debug, Clone)]
 #[repr(u8)]
 pub enum PickupType {

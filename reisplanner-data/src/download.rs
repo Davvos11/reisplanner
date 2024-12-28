@@ -1,12 +1,14 @@
 use std::{fs, io};
+use std::fs::File;
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
+use flate2::read::GzDecoder;
 use reqwest::Client;
 use reqwest::header::USER_AGENT;
 use tracing::debug;
 use zip::result::ZipError;
 use zip::ZipArchive;
-use crate::download::DownloadError::{FileSystem, ParseLocalModified, ParseRemoteModified};
+use crate::download::DownloadError::{FileSystem, FileTypeNotSupported, ParseLocalModified, ParseRemoteModified};
 
 const MAINTAINER_EMAIL: &str = "vosdavid2@gmail.com";
 const APP_NAME: &str = env!("CARGO_PKG_NAME");
@@ -24,6 +26,8 @@ pub enum DownloadError {
     Unzip(#[from] ZipError),
     #[error("Failed to access the downloaded GTFS files")]
     FileSystem(#[from] io::Error),
+    #[error("Filetype of {0} not supported")]
+    FileTypeNotSupported(String),
 }
 
 pub fn get_contact_info() -> String {
@@ -52,15 +56,34 @@ pub async fn download_zip(url: &str, folder_path: &str) -> Result<Vec<PathBuf>, 
         .header(USER_AGENT, get_contact_info())
         .send().await?
         .error_for_status()?;
-    let mut archive = ZipArchive::new(
-        Cursor::new(response.bytes().await?)
-    )?;
-    let path = Path::new(folder_path);
-    archive.extract(path)?;
-    let extracted_paths = archive.file_names()
-        .map(|filename| path.join(filename))
-        .collect();
-    Ok(extracted_paths)
+    if url.ends_with(".zip") {
+        let mut archive = ZipArchive::new(
+            Cursor::new(response.bytes().await?)
+        )?;
+        let path = Path::new(folder_path);
+        archive.extract(path)?;
+        let extracted_paths = archive.file_names()
+            .map(|filename| path.join(filename))
+            .collect();
+        Ok(extracted_paths)
+    } else if url.ends_with(".gz") {
+        let path = Path::new(folder_path);
+        let filename = url
+            .split('/')
+            .last()
+            .and_then(|name| name.strip_suffix(".gz"))
+            .expect("Filename should end with .gz");
+        let file_path = path.join(filename); 
+
+        // Decompress the .gz file
+        let bytes = response.bytes().await?;
+        let mut decoder = GzDecoder::new(bytes.as_ref());
+        let mut out_file = File::create(&file_path)?;
+        io::copy(&mut decoder, &mut out_file)?;
+        Ok(vec![file_path])
+    } else {
+        Err(FileTypeNotSupported(url.to_string()))
+    }
 }
 
 async fn has_updated(url: &str, file_path: &str) -> Result<bool, DownloadError> {
@@ -116,4 +139,17 @@ fn get_folder_contents(path: &str) -> Result<Vec<PathBuf>, DownloadError> {
         .map(|entry| entry.path())
         .collect();
     Ok(entries)
+}
+
+pub async fn download_html(url: &str) -> Result<String, DownloadError>  {
+    let client = Client::builder()
+        .build()?;
+
+    let response = client
+        .get(url)
+        .header(USER_AGENT, get_contact_info())
+        .send().await?
+        .error_for_status()?;
+    
+    Ok(response.text().await?)
 }

@@ -1,6 +1,6 @@
+use crate::utils::bool_from_int;
 use rbatis::{crud, impl_delete};
 use serde::{Deserialize, Serialize};
-use crate::utils::bool_from_int;
 
 #[derive(Debug, Deserialize, Serialize, Clone, Default)]
 pub struct StationTransfer {
@@ -52,7 +52,7 @@ pub struct ContConnection {
 /// gebruiken om de gegevens van stations in (trein) dienstregeling publicaties correct weer te geven
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Station {
-    #[serde(deserialize_with="bool_from_int")]
+    #[serde(deserialize_with = "bool_from_int")]
     pub transfer: bool,
     /// `stop_code` in GTFS `stops` table
     pub station_abr: String,
@@ -70,3 +70,50 @@ pub struct Station {
     pub y_coord: i32,
     pub station_name: String,
 }
+
+///////////////////////////////////////////////////////////////////////////////////////////
+/// Haltes
+///////////////////////////////////////////////////////////////////////////////////////////
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct HaltesExport {
+    pub stopplaces: StopPlaces,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct StopPlaces {
+    #[serde(rename = "stopplace")]
+    pub stopplaces: Vec<StopPlace>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct StopPlace {
+    #[serde(rename = "@placecode")]
+    pub placecode: Option<String>,
+    pub stopplacecode: String,
+    // TODO make enum
+    pub stopplacetype: String,
+    #[serde(default)]
+    pub quays: Quays,
+}
+
+#[derive(Debug, Deserialize, Default)]
+pub(crate) struct Quays {
+    #[serde(rename = "quay", default)]
+    pub quays: Vec<Quay>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct Quay {
+    #[serde(rename = "ID")]
+    pub id: String,
+}
+
+#[derive(Debug, Deserialize, Serialize, Default)]
+pub struct PlaceTransfer {
+    pub code: String,
+    pub stop_id: String,
+}
+
+crud!(PlaceTransfer {});
+impl_delete!(PlaceTransfer {delete_all() => "``"});
