@@ -18,6 +18,10 @@ Uses the GTFS feed from https://gtfs.ovapi.nl/nl/.
        - [ ] Alerts
  - [ ] Journey planning algorithm
    - [X] CSA (proof of concept)
+   - [X] RAPTOR
+     - [X] Basic implementation 
+     - [ ] Modal transfers
+   - [ ] Custom variant on RAPTIR
  - [ ] Display algorithm results
  - [ ] Display vehicle information
 
