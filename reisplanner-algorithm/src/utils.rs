@@ -38,6 +38,7 @@ pub fn seconds_to_hms(seconds: u32) -> String {
     format!("{:02}:{:02}:{:02}", hours, minutes, seconds)
 }
 
+#[allow(dead_code)]
 pub fn seconds_to_ms(seconds: u32) -> String {
     let minutes = (seconds % 3600) / 60;
     let seconds = seconds % 60;

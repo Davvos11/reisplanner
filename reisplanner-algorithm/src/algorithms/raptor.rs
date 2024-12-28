@@ -2,8 +2,7 @@ use crate::algorithms::raptor::visualiser::visualise_earliest_arrivals;
 use crate::database::queries::{count_stop_times, get_parent_station_map, get_stop_times, get_transfer_times};
 use crate::getters::get_stop_readable;
 use crate::types::JourneyPart;
-use crate::utils::{deserialize_from_disk, seconds_to_hms, serialize_to_disk};
-use anyhow::anyhow;
+use crate::utils::{deserialize_from_disk,serialize_to_disk};
 use indicatif::{ProgressBar, ProgressStyle};
 use rbatis::executor::Executor;
 use rbatis::RBatis;
@@ -14,7 +13,7 @@ use std::collections::{HashMap, HashSet};
 use std::env;
 use std::hash::Hash;
 use tracing::field::debug;
-use tracing::{debug, error, trace, warn};
+use tracing::{debug, error};
 use crate::algorithms::raptor::Mode::NotApplicable;
 
 mod visualiser;
@@ -147,7 +146,7 @@ impl RRoute {
         let index = self.stops.iter().enumerate()
             .find(|&(_, stop)| stop.parent_id == parent_id)
             .map(|(i, _)| i)
-            .expect(&format!("Stop {parent_id} not in this route"));
+            .unwrap_or_else(|| panic!("Stop {parent_id} not in this route"));
 
         self.trip_from(index, start_time)
     }
@@ -348,7 +347,7 @@ pub async fn run_raptor<'a>(
         // unmark p, for each marked stop p
         marked = HashSet::new();
 
-        for (route_id, p) in q {
+        for (route_id, _) in q {
             let r = timetable.get(&route_id).expect("Route id from Q should be in timetable");
 
             // t ← ⊥ // the current trip

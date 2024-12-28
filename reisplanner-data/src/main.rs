@@ -44,7 +44,7 @@ async fn main() -> anyhow::Result<()> {
     }
 
     // IFF data (transfer times for each station)
-    let files = download_zip(IFF_URL, IFF_FOLDER).await?;
+    let _files = download_zip(IFF_URL, IFF_FOLDER).await?;
     // TODO check if the correct files are present
 
     debug!("Parsing IFF files...");

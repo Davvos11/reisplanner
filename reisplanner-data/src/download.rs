@@ -129,7 +129,7 @@ async fn has_updated(url: &str, file_path: &str) -> Result<bool, DownloadError> 
 
 fn get_folder_contents(path: &str) -> Result<Vec<PathBuf>, DownloadError> {
     let entries = fs::read_dir(path)
-        .map_err(|e| FileSystem(e))?
+        .map_err(FileSystem)?
         .filter_map(|entry| entry.ok()) // Ignore errors on individual entries
         .filter(|entry| {
             if let Some(name) = entry.file_name().to_str() {

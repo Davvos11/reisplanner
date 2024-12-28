@@ -1,13 +1,12 @@
 use crate::download::download_html;
 use crate::types::{HaltesExport, PlaceTransfer, StopPlace};
-use anyhow::{anyhow, bail, Context};
 use rbatis::executor::Executor;
 use regex::Regex;
 use reisplanner_gtfs::gtfs::types::Stop;
-use std::collections::HashMap;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::PathBuf;
+use anyhow::anyhow;
 use tracing::warn;
 
 const HALTES_URL: &str = "https://data.ndovloket.nl/haltes/";

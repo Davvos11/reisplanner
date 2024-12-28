@@ -76,17 +76,21 @@ pub struct Station {
 ///////////////////////////////////////////////////////////////////////////////////////////
 
 #[derive(Debug, Deserialize)]
+// (allow dead_code because the compiler does not understand access on deserialised objects)
+#[allow(dead_code)]
 pub(crate) struct HaltesExport {
     pub stopplaces: StopPlaces,
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 pub(crate) struct StopPlaces {
     #[serde(rename = "stopplace")]
     pub stopplaces: Vec<StopPlace>,
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 pub(crate) struct StopPlace {
     #[serde(rename = "@placecode")]
     pub placecode: Option<String>,
@@ -98,12 +102,14 @@ pub(crate) struct StopPlace {
 }
 
 #[derive(Debug, Deserialize, Default)]
+#[allow(dead_code)]
 pub(crate) struct Quays {
     #[serde(rename = "quay", default)]
     pub quays: Vec<Quay>,
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 pub(crate) struct Quay {
     #[serde(rename = "ID")]
     pub id: String,

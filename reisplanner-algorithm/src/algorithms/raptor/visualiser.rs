@@ -1,6 +1,7 @@
-use crate::algorithms::raptor::{Arrival, Connection};
+use crate::algorithms::raptor::Arrival;
 use crate::getters::get_stop_readable;
 use crate::utils::seconds_to_hms;
+use chrono::Local;
 use dot_writer::{Attributes, Color, DotWriter, Style};
 use rbatis::executor::Executor;
 use std::collections::HashMap;
@@ -8,7 +9,6 @@ use std::fs;
 use std::fs::File;
 use std::io::Write;
 use std::process::Command;
-use chrono::Local;
 
 pub async fn visualise_earliest_arrivals(
     tau: &HashMap<u32, Arrival>,
@@ -22,7 +22,7 @@ pub async fn visualise_earliest_arrivals(
 
         let mut digraph = writer.digraph();
 
-        for (id, arrival) in tau.iter() {
+        for (_, arrival) in tau.iter() {
             let name = get_stop_readable(&arrival.stop.parent_id, db).await?;
             if arrival.departure_stop.is_some() {
                 let from_station = get_stop_readable(&arrival.departure_stop.unwrap().parent_id, db).await?;
@@ -30,7 +30,7 @@ pub async fn visualise_earliest_arrivals(
                 let arrival = seconds_to_hms(arrival.time);
 
                 digraph.edge(format!("\"{from_station}\""), format!("\"{name}\""))
-                    .attributes().set_label(&format!("{arrival}"));
+                    .attributes().set_label(&arrival.to_string());
             } else {
                 digraph.node_named(format!("\"{name}\""))
                     .set_color(Color::Red).set_style(Style::Filled);
