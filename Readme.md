@@ -16,12 +16,16 @@ Uses the GTFS feed from https://gtfs.ovapi.nl/nl/.
          - [ ] Trip descriptors
        - [ ] Vehicle positions
        - [ ] Alerts
+ - [ ] Misc data
+   - [X] IFF transfer times per station
+   - [ ] IFF transfer times between stops
+   - [X] Bison halte data 
  - [ ] Journey planning algorithm
    - [X] CSA (proof of concept)
    - [X] RAPTOR
      - [X] Basic implementation 
      - [ ] Modal transfers
-   - [ ] Custom variant on RAPTIR
+   - [ ] Custom variant on RAPTOR
  - [ ] Display algorithm results
  - [ ] Display vehicle information
 
